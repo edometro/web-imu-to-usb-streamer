@@ -23,8 +23,11 @@ WEBUSB_URL_DEF(landingPage, 1 /*https*/, "edometro.github.io/web-imu-to-usb-stre
 String inputBuffer = "";
 bool can_initialized = false;
 
-void sendIMUtoCAN(float alpha, float beta, float gamma, float ax, float ay, float az) {
-  if (!can_initialized) return;
+void sendIMUtoCAN(float alpha, float beta, float gamma, float ax, float ay, float ayz) {
+  if (!can_initialized) {
+    usb_web.println("ERR:NO_CAN_INIT");
+    return;
+  }
 
   uint8_t data[8];
   bool success = true;
