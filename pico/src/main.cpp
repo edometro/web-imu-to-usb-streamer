@@ -55,13 +55,38 @@ void sendIMUtoCAN(float alpha, float beta, float gamma, float ax, float ay, floa
   }
 }
 
+// Callback for WebUSB connection state
+void line_state_callback(bool connected) {
+  digitalWrite(LED_BUILTIN, connected);
+  if (connected) {
+    usb_web.println("WEBUSB_CONNECTED_CALLBACK");
+    usb_web.flush();
+  }
+}
+
 void setup() {
+  // 0. Serial Init (USB CDC for Debug)
+  Serial.begin(115200);
+  
   pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, HIGH); // Setup start
+  digitalWrite(LED_BUILTIN, HIGH); 
 
   // 1. Configure WebUSB
   usb_web.setLandingPage(&landingPage);
+  usb_web.setLineStateCallback(line_state_callback);
+  
+  // Manual begin() checks
+  if (!TinyUSBDevice.isInitialized()) {
+    TinyUSBDevice.begin(0);
+  }
   usb_web.begin();
+
+  // If already mounted, force re-enumeration
+  if (TinyUSBDevice.mounted()) {
+    TinyUSBDevice.detach();
+    delay(10);
+    TinyUSBDevice.attach();
+  }
 
   // 2. UART2 Init
   Serial2.begin(115200);
@@ -78,57 +103,58 @@ void setup() {
     can_initialized = true;
   }
 
-  digitalWrite(LED_BUILTIN, LOW); // Setup finished (waiting for mount)
-
-  // Wait for USB mount with high-speed blink
-  while (!TinyUSBDevice.mounted()) {
-    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
-    delay(50);
-  }
   digitalWrite(LED_BUILTIN, LOW);
   
-  // Wait a bit for the host to start reading
-  delay(1000);
-  usb_web.println("PICO_READY");
-  usb_web.println("WAITING_FOR_DATA");
+  // Wait loop with timeout to avoid hanging if USB not plugged
+  uint32_t start = millis();
+  while (!TinyUSBDevice.mounted() && millis() - start < 5000) {
+    delay(100);
+  }
+  
+  Serial.println("Setup Complete");
 }
 
 void loop() {
-  // LED blink to show activity (1Hz)
-  static uint32_t led_timer = 0;
+  // LED blink (Heartbeat)
+  static uint33_t led_timer = 0;
   if (millis() - led_timer > 1000) {
     led_timer = millis();
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+    
+    // Debug output to Serial (CDC)
+    // Serial.println("Loop running..."); 
   }
 
-  // Periodic Heartbeat to verify RX path (every 3s)
+  // Periodic Heartbeat to WebUSB
   static uint32_t hb_timer = 0;
   if (millis() - hb_timer > 3000) {
     hb_timer = millis();
-    usb_web.print("HB_TIME:");
-    usb_web.println(millis());
+    if (usb_web.connected()) {
+      usb_web.println("HEARTBEAT");
+      usb_web.flush();
+      Serial.println("HB SENT");
+    }
   }
 
-  // USB WebUSB -> UART2 & Parse for CAN
-  while (usb_web.available()) {
+  // USB WebUSB -> UART2 & Parse
+  if (usb_web.available()) {
     char c = usb_web.read();
-    Serial2.write(c); // Forward to UART
     
-    // Quick visual feedback on RX
-    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+    // Echo back immediately
+    usb_web.write(c);
+    usb_web.flush(); // IMPORTANT
+    
+    Serial.print(c); // Debug to CDC
+    Serial2.write(c); // Forward to UART
 
-    if (c == '\r') continue; // Ignore CR for robust parsing
+    if (c == '\r') return; // Ignore
 
-    // Immediate Echo for debugging
-    usb_web.print("ECHO:");
-    usb_web.println(c == '\n' ? "\\n" : String(c));
-
-    // Buffer for CSV parsing & commands
     if (c == '\n') {
       inputBuffer.trim();
-      
       if (inputBuffer == "ping") {
         usb_web.println("PONG");
+        usb_web.flush();
+        Serial.println("Ping received, Pong sent");
       } else {
         // Parse CSV: alpha,beta,gamma,ax,ay,az
         float vals[6] = {0};
@@ -146,12 +172,6 @@ void loop() {
 
         if (count == 6) {
           sendIMUtoCAN(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]);
-        } else if (inputBuffer.length() > 0) {
-          // Log parse failure only if not empty
-          usb_web.print("ERR:PARSE_CNT:");
-          usb_web.println(count);
-          usb_web.print("RAW:");
-          usb_web.println(inputBuffer);
         }
       }
       inputBuffer = "";
@@ -159,9 +179,13 @@ void loop() {
       inputBuffer += c;
     }
   }
-
+  
   // UART2 (STM32) -> USB WebUSB
-  if (Serial2.available()) {
-    usb_web.write(Serial2.read());
+  while (Serial2.available()) {
+    char c = Serial2.read();
+    if (usb_web.connected()) {
+      usb_web.write(c);
+      usb_web.flush();
+    }
   }
 }
