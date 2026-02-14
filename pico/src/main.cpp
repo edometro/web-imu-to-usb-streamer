@@ -116,7 +116,7 @@ void setup() {
 
 void loop() {
   // LED blink (Heartbeat)
-  static uint33_t led_timer = 0;
+  static uint32_t led_timer = 0;
   if (millis() - led_timer > 1000) {
     led_timer = millis();
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
