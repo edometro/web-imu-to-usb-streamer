@@ -115,6 +115,11 @@ void setup() {
 }
 
 void loop() {
+  #ifdef TINYUSB_NEED_POLLING_TASK
+  // Manual call tud_task since it isn't called by Core's background
+  TinyUSBDevice.task();
+  #endif
+
   // LED blink (Heartbeat)
   static uint32_t led_timer = 0;
   if (millis() - led_timer > 1000) {

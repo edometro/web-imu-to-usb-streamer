@@ -126,7 +126,46 @@ const App: React.FC = () => {
     }
   }, []);
 
+  const handleOrientation = useCallback((event: DeviceOrientationEvent) => {
+    // 診断中は自動送信を停止 (isTestModeのみ許可、あるいは明示的なストリーミングモードを作るべきだが、一旦コメントアウトで抑制)
+    if (!isTestMode && isStreaming) { // isStreamingフラグを追加して制御
+      updateBuffer({
+        timestamp: Date.now(),
+        orientation: { alpha: event.alpha, beta: event.beta, gamma: event.gamma }
+      });
+    }
+  }, [isTestMode, isStreaming]);
+
+  const handleMotion = useCallback((event: DeviceMotionEvent) => {
+    if (!isTestMode && isStreaming) {
+      updateBuffer({
+        timestamp: Date.now(),
+        acceleration: { x: event.acceleration?.x || 0, y: event.acceleration?.y || 0, z: event.acceleration?.z || 0 },
+        rotationRate: { alpha: event.rotationRate?.alpha || 0, beta: event.rotationRate?.beta || 0, gamma: event.rotationRate?.gamma || 0 }
+      });
+    }
+  }, [isTestMode, isStreaming]);
+
+  const manualPing = () => {
+    if (deviceRef.current && deviceRef.current.opened && status === ConnectionStatus.CONNECTED) {
+      const pingStr = "ping\n";
+      const data = encoderRef.current.encode(pingStr);
+      deviceRef.current.transferOut(endpointOutRef.current, data)
+        .then(() => addLog('tx', 'PING SENT (ping)'))
+        .catch(e => {
+          console.error("Ping Error:", e);
+          addLog('tx', `PING FAILED: ${e.message}`);
+        });
+    } else {
+      setError("USBが接続されていません。");
+    }
+  };
+
   const startReading = async () => {
+    if (isReadingRef.current) {
+      console.warn("WebUSB: Reading loop already running. Skipping.");
+      return;
+    }
     isReadingRef.current = true;
     const device = deviceRef.current;
     const decoder = new TextDecoder();
@@ -145,86 +184,21 @@ const App: React.FC = () => {
           console.warn("WebUSB TransferIn result status:", result.status);
         }
       } catch (error: any) {
-        if (!isReadingRef.current || !device.opened) break;
+        if (!isReadingRef.current || !device.opened) {
+          console.log("WebUSB: Loop exiting due to closed device or stop flag.");
+          break;
+        }
         console.warn("WebUSB Read error:", error);
-        await new Promise(r => setTimeout(r, 500)); // Backoff
+        // エラーが連続する場合のウェイト
+        await new Promise(r => setTimeout(r, 100));
       }
     }
-    console.log("WebUSB: Reading loop stopped.");
-  };
-
-  const connectWebUSB = async () => {
-    if (!isWebUSBSupported) {
-      setError("このブラウザはWebUSB APIに対応していません。Chrome/Edgeを使用してください。");
-      return;
-    }
-
-    try {
-      setError(null);
-      // Raspberry Pi Pico VID=0x2E8A
-      const device = await (navigator as any).usb.requestDevice({
-        filters: [
-          { vendorId: 0x2E8A }
-        ]
-      });
-      await initializeWebUSB(device);
-    } catch (err: any) {
-      console.error("WebUSB Request Error:", err);
-      if (err.name === 'NotFoundError') {
-        setError("デバイスが選択されませんでした。USB接続を確認してください。");
-      } else {
-        setError(`接続エラー: ${err.message}`);
-      }
-      setStatus(ConnectionStatus.DISCONNECTED);
-    }
-  };
-
-  const disconnectWebUSB = async () => {
+    console.log("WebUSB: Reading loop stopped. Reason:", {
+      isReading: isReadingRef.current,
+      deviceExists: !!device,
+      deviceOpened: device?.opened
+    });
     isReadingRef.current = false;
-    const device = deviceRef.current;
-
-    if (device && device.opened) {
-      try {
-        await device.close();
-      } catch (e) {
-        console.warn("Close error", e);
-      }
-    }
-
-    deviceRef.current = null;
-    setStatus(ConnectionStatus.DISCONNECTED);
-    setError(null);
-  };
-
-  const handleOrientation = useCallback((event: DeviceOrientationEvent) => {
-    if (!isTestMode) {
-      updateBuffer({
-        timestamp: Date.now(),
-        orientation: { alpha: event.alpha, beta: event.beta, gamma: event.gamma }
-      });
-    }
-  }, [isTestMode]);
-
-  const handleMotion = useCallback((event: DeviceMotionEvent) => {
-    if (!isTestMode) {
-      updateBuffer({
-        timestamp: Date.now(),
-        acceleration: { x: event.acceleration?.x || 0, y: event.acceleration?.y || 0, z: event.acceleration?.z || 0 },
-        rotationRate: { alpha: event.rotationRate?.alpha || 0, beta: event.rotationRate?.beta || 0, gamma: event.rotationRate?.gamma || 0 }
-      });
-    }
-  }, [isTestMode]);
-
-  const manualPing = () => {
-    if (deviceRef.current && deviceRef.current.opened && status === ConnectionStatus.CONNECTED) {
-      const pingStr = "ping\n";
-      const data = encoderRef.current.encode(pingStr);
-      deviceRef.current.transferOut(endpointOutRef.current, data)
-        .then(() => addLog('tx', 'PING SENT (ping)'))
-        .catch(e => addLog('tx', `PING FAILED: ${e.message}`));
-    } else {
-      setError("USBが接続されていません。");
-    }
   };
 
   const updateBuffer = (partialData: Partial<IMUData>) => {
