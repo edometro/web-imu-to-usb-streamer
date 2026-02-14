@@ -145,9 +145,8 @@ void loop() {
   if (usb_web.available()) {
     char c = usb_web.read();
     
-    // Echo back immediately
-    usb_web.write(c);
-    usb_web.flush(); // IMPORTANT
+    // USB WebUSB -> UART2 & Parse
+    // Echo back removed to prevent buffer overflow/lag during high-speed streaming
     
     Serial.print(c); // Debug to CDC
     Serial2.write(c); // Forward to UART
