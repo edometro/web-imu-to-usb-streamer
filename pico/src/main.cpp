@@ -1,13 +1,45 @@
 #include <Arduino.h>
 #include "Adafruit_TinyUSB.h"
+#include <SPI.h>
+#include <mcp_can.h>
 
+// CAN Pins (based on rp2350_can)
+const int PIN_CAN_INT  = 8;
+const int PIN_SPI_CS   = 9;
+const int PIN_SPI_SCK  = 10;
+const int PIN_SPI_MOSI = 11;
+const int PIN_SPI_MISO = 12;
+
+// MCP_CAN instance
+MCP_CAN CAN0(&SPI1, PIN_SPI_CS);
 
 // USB WebUSB object
 Adafruit_USBD_WebUSB usb_web;
 
 // Landing Page: Scheme (1: https), URL
-// This is optional but nice to have.
 WEBUSB_URL_DEF(landingPage, 1 /*https*/, "edometro.github.io/web-imu-to-usb-streamer/");
+
+// CSV parsing buffer
+String inputBuffer = "";
+
+void sendIMUtoCAN(float alpha, float beta, float gamma, float ax, float ay, float az) {
+  uint8_t data[8];
+  
+  // Pack alpha, beta (4B + 4B = 8B) -> ID 0x501
+  memcpy(data, &alpha, 4);
+  memcpy(data + 4, &beta, 4);
+  CAN0.sendMsgBuf(0x501, 0, 8, data);
+
+  // Pack gamma, ax (4B + 4B = 8B) -> ID 0x502
+  memcpy(data, &gamma, 4);
+  memcpy(data + 4, &ax, 4);
+  CAN0.sendMsgBuf(0x502, 0, 8, data);
+
+  // Pack ay, az (4B + 4B = 8B) -> ID 0x503
+  memcpy(data, &ay, 4);
+  memcpy(data + 4, &az, 4);
+  CAN0.sendMsgBuf(0x503, 0, 8, data);
+}
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -17,9 +49,18 @@ void setup() {
   usb_web.begin();
 
   // UART2 Init (TX=GP4, RX=GP5) for STM32 communication
-  // Note: Serial1 is usually GP0/GP1 but we use Serial2 to avoid conflict with PIO USB on GP0/GP1 if used.
-  // Actually, PIO USB uses specific pins defined by PIO_USB_DP_PIN, default 0.
   Serial2.begin(115200);
+
+  // SPI1 Init for MCP2515
+  SPI1.setSCK(PIN_SPI_SCK);
+  SPI1.setTX(PIN_SPI_MOSI);
+  SPI1.setRX(PIN_SPI_MISO);
+  SPI1.begin();
+
+  // CAN Init (1Mbps, 16MHz)
+  if (CAN0.begin(MCP_ANY, CAN_1000KBPS, MCP_16MHZ) == CAN_OK) {
+    CAN0.setMode(MCP_NORMAL);
+  }
 
   // Wait for USB mount
   while (!TinyUSBDevice.mounted()) {
@@ -38,13 +79,37 @@ void loop() {
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
   }
 
-  // USB WebUSB -> UART2 (STM32)
-  if (usb_web.available()) {
-    Serial2.write(usb_web.read());
+  // USB WebUSB -> UART2 & Parse for CAN
+  while (usb_web.available()) {
+    char c = usb_web.read();
+    Serial2.write(c); // Forward to UART as before
+    
+    // Buffer for CSV parsing
+    if (c == '\n') {
+      // Parse CSV: alpha,beta,gamma,ax,ay,az
+      float vals[6] = {0};
+      int count = 0;
+      int startPos = 0;
+      for (int i = 0; i < inputBuffer.length() && count < 6; i++) {
+        if (inputBuffer.charAt(i) == ',') {
+          vals[count++] = inputBuffer.substring(startPos, i).toFloat();
+          startPos = i + 1;
+        }
+      }
+      if (count < 6 && startPos < inputBuffer.length()) {
+        vals[count++] = inputBuffer.substring(startPos).toFloat();
+      }
+
+      if (count == 6) {
+        sendIMUtoCAN(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]);
+      }
+      inputBuffer = "";
+    } else {
+      inputBuffer += c;
+    }
   }
 
   // UART2 (STM32) -> USB WebUSB
-  // Echo back or send debug info
   if (Serial2.available()) {
     usb_web.write(Serial2.read());
   }
