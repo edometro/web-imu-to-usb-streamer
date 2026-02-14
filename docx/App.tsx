@@ -60,7 +60,7 @@ const App: React.FC = () => {
       if ('usb' in navigator) {
         try {
           await (navigator as any).usb.requestDevice({
-            filters: [{ vendorId: 0x303A, productId: 0x1001 }]
+            filters: [{ vendorId: 0x303A }]
           });
         } catch (usbErr: any) {
           // ユーザーがキャンセルした場合は中断
@@ -75,9 +75,9 @@ const App: React.FC = () => {
       }
 
       // Step 2: シリアルポートに接続
-      // ESP32-C3 USB JTAG/serial debug unit: VID=0x303A, PID=0x1001
+      // ESP32-C3 VID=0x303A (PIDは不問)
       const port = await (navigator as any).serial.requestPort({
-        filters: [{ usbVendorId: 0x303A, usbProductId: 0x1001 }]
+        filters: [{ usbVendorId: 0x303A }]
       });
       await initializePort(port);
     } catch (err: any) {
