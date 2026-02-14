@@ -55,6 +55,26 @@ const App: React.FC = () => {
     try {
       setError(null);
       setStatus(ConnectionStatus.CONNECTING);
+
+      // Step 1: WebUSBでUSB JTAG/serial debug unitの許可を取得
+      if ('usb' in navigator) {
+        try {
+          await (navigator as any).usb.requestDevice({
+            filters: [{ vendorId: 0x303A, productId: 0x1001 }]
+          });
+        } catch (usbErr: any) {
+          // ユーザーがキャンセルした場合は中断
+          if (usbErr.name === 'NotFoundError') {
+            setError("USB JTAG/serial debug unit が選択されませんでした。");
+            setStatus(ConnectionStatus.DISCONNECTED);
+            return;
+          }
+          // 既にペアリング済みの場合など、エラーでも続行
+          console.warn("WebUSB permission step:", usbErr.message);
+        }
+      }
+
+      // Step 2: シリアルポートに接続
       // ESP32-C3 USB JTAG/serial debug unit: VID=0x303A, PID=0x1001
       const port = await (navigator as any).serial.requestPort({
         filters: [{ usbVendorId: 0x303A, usbProductId: 0x1001 }]
