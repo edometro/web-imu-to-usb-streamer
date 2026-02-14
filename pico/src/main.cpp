@@ -21,8 +21,11 @@ WEBUSB_URL_DEF(landingPage, 1 /*https*/, "edometro.github.io/web-imu-to-usb-stre
 
 // CSV parsing buffer
 String inputBuffer = "";
+bool can_initialized = false;
 
 void sendIMUtoCAN(float alpha, float beta, float gamma, float ax, float ay, float az) {
+  if (!can_initialized) return;
+
   uint8_t data[8];
   bool success = true;
   
@@ -43,39 +46,40 @@ void sendIMUtoCAN(float alpha, float beta, float gamma, float ax, float ay, floa
 
   if (success) {
     usb_web.println("ACK");
-  } else {
-    usb_web.println("ERR");
   }
 }
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH); // Setup start
 
-  // Configure WebUSB
+  // 1. Configure WebUSB
   usb_web.setLandingPage(&landingPage);
   usb_web.begin();
 
-  // UART2 Init (TX=GP4, RX=GP5) for STM32 communication
+  // 2. UART2 Init
   Serial2.begin(115200);
 
-  // SPI1 Init for MCP2515
+  // 3. SPI1 Init for MCP2515
   SPI1.setSCK(PIN_SPI_SCK);
   SPI1.setTX(PIN_SPI_MOSI);
   SPI1.setRX(PIN_SPI_MISO);
   SPI1.begin();
 
-  // CAN Init (1Mbps, 16MHz)
+  // 4. CAN Init
   if (CAN0.begin(MCP_ANY, CAN_1000KBPS, MCP_16MHZ) == CAN_OK) {
     CAN0.setMode(MCP_NORMAL);
+    can_initialized = true;
   }
 
-  // Wait for USB mount
+  digitalWrite(LED_BUILTIN, LOW); // Setup finished (waiting for mount)
+
+  // Wait for USB mount with high-speed blink
   while (!TinyUSBDevice.mounted()) {
-    digitalWrite(LED_BUILTIN, HIGH);
-    delay(100);
-    digitalWrite(LED_BUILTIN, LOW);
-    delay(100);
+    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+    delay(50);
   }
+  digitalWrite(LED_BUILTIN, LOW);
 }
 
 void loop() {
@@ -89,7 +93,7 @@ void loop() {
   // USB WebUSB -> UART2 & Parse for CAN
   while (usb_web.available()) {
     char c = usb_web.read();
-    Serial2.write(c); // Forward to UART as before
+    Serial2.write(c); // Forward to UART
     
     // Buffer for CSV parsing
     if (c == '\n') {
