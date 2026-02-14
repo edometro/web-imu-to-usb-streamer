@@ -24,21 +24,28 @@ String inputBuffer = "";
 
 void sendIMUtoCAN(float alpha, float beta, float gamma, float ax, float ay, float az) {
   uint8_t data[8];
+  bool success = true;
   
   // Pack alpha, beta (4B + 4B = 8B) -> ID 0x501
   memcpy(data, &alpha, 4);
   memcpy(data + 4, &beta, 4);
-  CAN0.sendMsgBuf(0x501, 0, 8, data);
+  if (CAN0.sendMsgBuf(0x501, 0, 8, data) != CAN_OK) success = false;
 
   // Pack gamma, ax (4B + 4B = 8B) -> ID 0x502
   memcpy(data, &gamma, 4);
   memcpy(data + 4, &ax, 4);
-  CAN0.sendMsgBuf(0x502, 0, 8, data);
+  if (CAN0.sendMsgBuf(0x502, 0, 8, data) != CAN_OK) success = false;
 
   // Pack ay, az (4B + 4B = 8B) -> ID 0x503
   memcpy(data, &ay, 4);
   memcpy(data + 4, &az, 4);
-  CAN0.sendMsgBuf(0x503, 0, 8, data);
+  if (CAN0.sendMsgBuf(0x503, 0, 8, data) != CAN_OK) success = false;
+
+  if (success) {
+    usb_web.println("ACK");
+  } else {
+    usb_web.println("ERR");
+  }
 }
 
 void setup() {
