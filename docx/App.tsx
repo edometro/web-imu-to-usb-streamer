@@ -259,7 +259,10 @@ const App: React.FC = () => {
 
       deviceRef.current.transferOut(endpointOutRef.current, data)
         .then(() => {
-          // console.log("TX:", csv.trim());
+          // Debug: TX Log visible in terminal (throttled)
+          if (Math.random() < 0.1) { // 10%の確率で表示（流速が早すぎるため）
+            addLog('tx', csv.trim());
+          }
         })
         .catch(e => {
           console.error("Write fail", e);
