@@ -12,7 +12,7 @@ const App: React.FC = () => {
   const [imuDataBuffer, setImuDataBuffer] = useState<IMUData[]>([]);
   const [insight] = useState<string>("USB (Vendor Class)に接続してセンサーを有効にすると、AI解析が始まります。");
   const [isStreaming, setIsStreaming] = useState(false);
-  const [isTestMode, setIsTestMode] = useState(true); // Default to ON as requested
+  const [isTestMode, setIsTestMode] = useState(false); // Default to OFF
   const [error, setError] = useState<string | null>(null);
   const [showGuide, setShowGuide] = useState(false);
 
@@ -129,7 +129,6 @@ const App: React.FC = () => {
     }
     deviceRef.current = null;
     setStatus(ConnectionStatus.DISCONNECTED);
-    setError(null);
   };
 
   const startReading = async () => {
@@ -179,13 +178,12 @@ const App: React.FC = () => {
 
     if (bufferRef.current.length > 50) bufferRef.current.shift();
 
-    // Data Streaming (WebUSB)
+    // Data Streaming (WebUSB) - Only if connected
     if (deviceRef.current && deviceRef.current.opened && status === ConnectionStatus.CONNECTED) {
       const csv = `${newData.orientation.alpha?.toFixed(2)},${newData.orientation.beta?.toFixed(2)},${newData.orientation.gamma?.toFixed(2)},${newData.acceleration.x?.toFixed(2)},${newData.acceleration.y?.toFixed(2)},${newData.acceleration.z?.toFixed(2)}\n`;
       const encoded = encoderRef.current.encode(csv);
       deviceRef.current.transferOut(endpointOutRef.current, encoded)
         .then(() => {
-          // Throttled log (10% chance)
           if (Math.random() < 0.1) addLog('tx', csv.trim());
         })
         .catch(e => console.error("TX Fail", e));
@@ -204,10 +202,10 @@ const App: React.FC = () => {
     });
   }, [isTestMode, isStreaming, status]);
 
-  // Test Mode Loop
+  // Test Mode Loop - Now works regardless of status
   useEffect(() => {
     let timer: number;
-    if (isTestMode && status === ConnectionStatus.CONNECTED) {
+    if (isTestMode) {
       timer = window.setInterval(() => {
         const v = Math.sin(Date.now() / 500) * 10;
         updateBuffer({ timestamp: Date.now(), acceleration: { x: v, y: v / 2, z: 0 }, orientation: { alpha: v * 5, beta: 0, gamma: 0 } });
@@ -284,8 +282,7 @@ const App: React.FC = () => {
             <div className="space-y-4">
               <button
                 onClick={toggleStreaming}
-                disabled={status !== ConnectionStatus.CONNECTED}
-                className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${isStreaming ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' : 'bg-slate-700 text-slate-400'} ${status !== ConnectionStatus.CONNECTED ? 'opacity-50' : ''}`}
+                className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${isStreaming ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' : 'bg-slate-700 text-slate-400'}`}
               >
                 <i className={`fas ${isStreaming ? 'fa-stop-circle' : 'fa-play-circle'}`}></i>
                 {isStreaming ? 'Stop Sensor' : 'Start Sensor'}
@@ -293,7 +290,7 @@ const App: React.FC = () => {
 
               <button
                 onClick={() => setIsTestMode(!isTestMode)}
-                className={`w-full py-2 rounded-xl text-xs font-bold border transition-all ${isTestMode ? 'border-amber-500 text-amber-500 bg-amber-500/10' : 'border-slate-700 text-slate-500'}`}
+                className={`w-full py-2 rounded-xl text-xs font-bold border transition-all ${isTestMode ? 'border-amber-500 text-amber-500 bg-amber-500/10' : 'border-slate-700 text-slate-50'}`}
               >
                 <i className="fas fa-vial mr-2"></i>
                 {isTestMode ? 'Test Mode: ON' : 'Test Mode: OFF'}
