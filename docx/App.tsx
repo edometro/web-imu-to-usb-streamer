@@ -4,17 +4,12 @@ import { ConnectionStatus, IMUData, SerialSettings } from './types';
 import IMUChart from './components/IMUChart';
 import { analyzeMovement } from './services/geminiService';
 
-// WebUSB CDC Constants
-const CDC_SET_LINE_CODING = 0x20;
-const CDC_SET_CONTROL_LINE_STATE = 0x22;
-const USB_CDC_DATA_CLASS = 0x0A;
-
 const App: React.FC = () => {
   // State
   const [status, setStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
   const [imuDataBuffer, setImuDataBuffer] = useState<IMUData[]>([]);
   const [baudRate, setBaudRate] = useState<number>(115200);
-  const [insight, setInsight] = useState<string>("USB JTAG/Serialに接続してセンサーを有効にすると、AI解析が始まります。");
+  const [insight, setInsight] = useState<string>("USB HID (Pico)に接続してセンサーを有効にすると、AI解析が始まります。");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isTestMode, setIsTestMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,194 +17,82 @@ const App: React.FC = () => {
 
   // System capability checks
   const isSecureContext = window.isSecureContext;
-  const isWebUSBSupported = 'usb' in navigator;
+  const isWebHIDSupported = 'hid' in navigator;
 
-  // Refs for WebUSB persistence
-  const deviceRef = useRef<USBDevice | null>(null);
-  const endpointInRef = useRef<number>(0);
-  const endpointOutRef = useRef<number>(0);
-  const interfaceNumberRef = useRef<number>(0);
+  // Refs for WebHID persistence
+  const deviceRef = useRef<HIDDevice | null>(null);
   const encoderRef = useRef(new TextEncoder());
   const bufferRef = useRef<IMUData[]>([]);
-  const isReadingRef = useRef(false);
 
-  // Function to initialize WebUSB device (CDC ACM)
-  const initializeWebUSB = async (device: USBDevice) => {
+  // Function to initialize WebHID device
+  const initializeWebHID = async (device: HIDDevice) => {
     try {
       setStatus(ConnectionStatus.CONNECTING);
-      await device.open();
 
-      // Select Configuration 1
-      if (device.configuration === null) {
-        await device.selectConfiguration(1);
+      if (!device.opened) {
+        await device.open();
       }
 
-      // Find CDC Data Interface
-      let dataInterface: USBInterface | undefined;
-      let interfaceIndex = 0;
-
-      // Class 0x0A (CDC Data) を探す
-      const config = device.configuration;
-      if (config) {
-        dataInterface = config.interfaces.find(iface =>
-          iface.alternates[0].interfaceClass === USB_CDC_DATA_CLASS
-        );
-      }
-
-      // 見つからなければ Interface 1 を仮定 (ESP32-C3 CDC Mode)
-      if (!dataInterface && config && config.interfaces.length > 1) {
-        dataInterface = config.interfaces[1];
-      }
-
-      // それでもなければ Interface 0 (Vendor specific or Union)
-      if (!dataInterface && config && config.interfaces.length > 0) {
-        dataInterface = config.interfaces[0];
-      }
-
-      if (!dataInterface) {
-        throw new Error("CDC Data Interfaceが見つかりませんでした。");
-      }
-
-      interfaceIndex = dataInterface.interfaceNumber;
-      await device.claimInterface(interfaceIndex);
-
-      // Control Interface (0) も念のためClaim (設定用)
-      // Android等ではOSが握ってる場合があり失敗する可能性もあるのでtry-catch
-      try {
-        if (interfaceIndex !== 0) {
-          await device.claimInterface(0);
-        }
-      } catch (e) {
-        console.warn("Control interface claim failed (ignored)", e);
-      }
-
-      interfaceNumberRef.current = interfaceIndex;
-
-      // Find Endpoints
-      const endpoints = dataInterface.alternates[0].endpoints;
-      const inEp = endpoints.find(e => e.direction === 'in');
-      const outEp = endpoints.find(e => e.direction === 'out');
-
-      if (!inEp || !outEp) {
-        throw new Error("Endpointsが見つかりませんでした。");
-      }
-
-      endpointInRef.current = inEp.endpointNumber;
-      endpointOutRef.current = outEp.endpointNumber;
       deviceRef.current = device;
 
-      // Set Line Coding (Baud Rate)
-      await setLineCoding(device, baudRate);
-      // Set Control Line State (DTR=1, RTS=1)
-      await setControlLineState(device, true, true);
+      // Listen for input reports (from Pico) - Optional for now
+      device.addEventListener('inputreport', (event: any) => {
+        // const { data, device, reportId } = event;
+        // console.log("HID RX:", new Uint8Array(data.buffer));
+      });
+
+      // Handle disconnection
+      device.addEventListener('disconnect', () => {
+        disconnectHID();
+        setError("マイコンが取り外されました。");
+      });
 
       setStatus(ConnectionStatus.CONNECTED);
       setError(null);
 
-      startReading();
-
-      // device disconnect listener
-      (navigator as any).usb.onconnect = null; // reset
-      (navigator as any).usb.ondisconnect = (event: any) => {
+      // navigator.hid.ondisconnect handler
+      (navigator as any).hid.addEventListener('disconnect', (event: any) => {
         if (event.device === device) {
-          disconnectSerial();
+          disconnectHID();
           setError("マイコンが取り外されました。");
         }
-      };
+      });
 
     } catch (err: any) {
-      console.error("WebUSB Init Error:", err);
-      setError("WebUSB接続エラー: " + err.message);
-      disconnectSerial(); // cleanup
+      console.error("WebHID Init Error:", err);
+      setError("WebHID接続エラー: " + err.message);
+      disconnectHID(); // cleanup
     }
   };
 
-  const setLineCoding = async (device: USBDevice, baud: number) => {
-    // 115200, 1 stop bit, no parity, 8 data bits
-    const buffer = new ArrayBuffer(7);
-    const view = new DataView(buffer);
-    view.setUint32(0, baud, true);
-    view.setUint8(4, 0); // 1 stop bit
-    view.setUint8(5, 0); // no parity
-    view.setUint8(6, 8); // 8 data bits
-
-    await device.controlTransferOut({
-      requestType: 'class',
-      recipient: 'interface',
-      request: CDC_SET_LINE_CODING,
-      value: 0,
-      index: 0 // Control Interface Index (usually 0)
-    }, buffer);
-  };
-
-  const setControlLineState = async (device: USBDevice, dtr: boolean, rts: boolean) => {
-    const value = (dtr ? 1 : 0) | (rts ? 2 : 0);
-    await device.controlTransferOut({
-      requestType: 'class',
-      recipient: 'interface',
-      request: CDC_SET_CONTROL_LINE_STATE,
-      value: value,
-      index: 0 // Control Interface Index
-    });
-  };
-
-  const startReading = async () => {
-    isReadingRef.current = true;
-    const device = deviceRef.current;
-
-    while (isReadingRef.current && device && device.opened) {
-      try {
-        const result = await device.transferIn(endpointInRef.current, 64);
-
-        if (result.status === 'ok' && result.data) {
-          // データ受信（ここではIMUデータは送信専用なのでデバッグ表示のみなど）
-          // 必要であればパースロジックを入れる
-          // const text = new TextDecoder().decode(result.data);
-          // console.log("RX:", text);
-        }
-      } catch (error: any) {
-        if (!device.opened) break;
-        console.warn("Read error:", error);
-        // エラー時は少し待機
-        await new Promise(r => setTimeout(r, 100));
-      }
-    }
-  };
-
-  const connectSerial = async () => {
-    if (!isWebUSBSupported) {
-      setError("このブラウザはWebUSB APIに対応していません。Chrome/Edgeを使用してください。");
+  const connectHID = async () => {
+    if (!isWebHIDSupported) {
+      setError("このブラウザはWebHID APIに対応していません。Chrome/Edgeを使用してください。");
       return;
     }
 
     try {
       setError(null);
-      // ESP32-C3 VID=0x303A 以外にも、Seeed(0x2886)、CH34x(0x1a86)、CP210x(0x10c4)、FTDI(0x0403) を追加
-      const device = await (navigator as any).usb.requestDevice({
-        filters: [
-          { vendorId: 0x303A }, // Espressif
-          { vendorId: 0x2886 }, // Seeed Studio
-          { vendorId: 0x1A86 }, // WCH (CH34x)
-          { vendorId: 0x10C4 }, // Silicon Labs (CP210x)
-          { vendorId: 0x0403 }  // FTDI
-        ]
+      // Raspberry Pi Pico VID=0x2E8A, Generic Usage Page=0xFF00
+      const devices = await (navigator as any).hid.requestDevice({
+        filters: [{ vendorId: 0x2E8A, usagePage: 0xFF00 }]
       });
-      await initializeWebUSB(device);
-    } catch (err: any) {
-      console.error("WebUSB Request Error:", err);
-      if (err.name === 'NotFoundError') {
-        setError("デバイスが選択されませんでした。USB接続を確認してください。");
-      } else {
-        setError(`接続エラー: ${err.message}`);
+
+      if (devices.length === 0) {
+        setError("デバイスが選択されませんでした。");
+        return;
       }
+
+      await initializeWebHID(devices[0]);
+    } catch (err: any) {
+      console.error("WebHID Request Error:", err);
+      setError(`接続エラー: ${err.message}`);
       setStatus(ConnectionStatus.DISCONNECTED);
     }
   };
 
-  const disconnectSerial = async () => {
-    isReadingRef.current = false;
+  const disconnectHID = async () => {
     const device = deviceRef.current;
-
     if (device && device.opened) {
       try {
         await device.close();
@@ -268,13 +151,23 @@ const App: React.FC = () => {
 
     if (bufferRef.current.length > 50) bufferRef.current.shift();
 
-    // USBにCSV送信 (WebUSB transferOut)
+    // USB HIDに送信
     if (deviceRef.current && deviceRef.current.opened && status === ConnectionStatus.CONNECTED) {
       const csv = `${newData.orientation.alpha?.toFixed(2)},${newData.orientation.beta?.toFixed(2)},${newData.orientation.gamma?.toFixed(2)},${newData.acceleration.x?.toFixed(2)},${newData.acceleration.y?.toFixed(2)},${newData.acceleration.z?.toFixed(2)}\n`;
-      const data = encoderRef.current.encode(csv);
 
-      deviceRef.current.transferOut(endpointOutRef.current, data)
-        .catch(e => console.error("Write fail", e));
+      // Create 64 byte buffer for HID report
+      const reportData = new Uint8Array(64);
+      const encoded = encoderRef.current.encode(csv);
+
+      // Copy data to buffer (truncate if too long)
+      for (let i = 0; i < Math.min(encoded.length, 64); i++) {
+        reportData[i] = encoded[i];
+      }
+
+      // Send Report ID 0 (if not defined in descriptor)
+      // Usually generic HID uses Report ID 0
+      deviceRef.current.sendReport(0, reportData)
+        .catch(e => console.error("HID Write fail", e));
     }
   };
 
@@ -340,8 +233,8 @@ const App: React.FC = () => {
             <i className="fas fa-project-diagram text-2xl text-white"></i>
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-white">IMU UART Bridge</h1>
-            <p className="text-slate-400 text-sm">WebUSB (CDC) 経由でIMUデータを送信</p>
+            <h1 className="text-2xl font-bold text-white">IMU HID Bridge</h1>
+            <p className="text-slate-400 text-sm">WebHID (Pico) 経由でIMUデータを送信</p>
           </div>
         </div>
 
@@ -364,12 +257,12 @@ const App: React.FC = () => {
           </select>
 
           <button
-            onClick={status === ConnectionStatus.CONNECTED ? disconnectSerial : connectSerial}
+            onClick={status === ConnectionStatus.CONNECTED ? disconnectHID : connectHID}
             className={`px-4 py-2 rounded-lg text-sm font-semibold shadow-lg flex items-center gap-2 transition-all ${status === ConnectionStatus.CONNECTED ? 'bg-red-500/20 text-red-400 border border-red-500/50' : 'bg-indigo-600 hover:bg-indigo-500 text-white'
               }`}
           >
             <i className={`fas ${status === ConnectionStatus.CONNECTED ? 'fa-unlink' : 'fa-plug'}`}></i>
-            {status === ConnectionStatus.CONNECTED ? '切断' : 'USB接続'}
+            {status === ConnectionStatus.CONNECTED ? '切断' : 'HID接続'}
           </button>
         </div>
       </header>
@@ -387,15 +280,15 @@ const App: React.FC = () => {
             </div>
             <i className="fas fa-arrow-right text-slate-600 hidden md:block"></i>
             <div className="flex flex-col items-center gap-2 p-3 bg-slate-900 rounded-xl border border-indigo-900 w-full relative">
-              <span className="absolute -top-2 left-2 bg-indigo-600 text-[8px] px-1 rounded uppercase">WebUSB</span>
+              <span className="absolute -top-2 left-2 bg-indigo-600 text-[8px] px-1 rounded uppercase">WebHID</span>
               <i className="fas fa-usb text-2xl text-indigo-400"></i>
-              <span>CDC Serial</span>
+              <span>Generic HID</span>
             </div>
             <i className="fas fa-arrow-right text-slate-600 hidden md:block"></i>
             <div className="flex flex-col items-center gap-2 p-3 bg-slate-900 rounded-xl border border-slate-800 w-full">
-              <i className="fas fa-memory text-2xl text-emerald-400"></i>
-              <span>② XIAO ESP32-C3</span>
-              <span className="text-[10px] text-slate-500">D6(TX) → STM32 D0(RX)</span>
+              <i className="fas fa-microchip text-2xl text-pink-400"></i>
+              <span>② Raspberry Pi Pico</span>
+              <span className="text-[10px] text-slate-500">GP0(TX) → STM32 D0(RX)</span>
             </div>
             <i className="fas fa-exchange-alt text-slate-600 hidden md:block"></i>
             <div className="flex flex-col items-center gap-2 p-3 bg-slate-900 rounded-xl border border-slate-800 w-full">
@@ -463,7 +356,7 @@ const App: React.FC = () => {
 
           <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <i className="fas fa-terminal text-emerald-400"></i> 送信状況 (WebUSB)
+              <i className="fas fa-terminal text-emerald-400"></i> 送信状況 (WebHID)
             </h2>
             <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-xs text-emerald-500 h-24 overflow-hidden relative">
               <div className="absolute inset-0 p-4 overflow-y-auto flex flex-col-reverse">
@@ -471,18 +364,18 @@ const App: React.FC = () => {
                   <div>
                     {imuDataBuffer.slice(-3).map((d, i) => (
                       <div key={i} className="whitespace-nowrap opacity-80 border-l-2 border-emerald-900 pl-2 mb-1">
-                        {`TX(${baudRate}) > ${d.acceleration.x?.toFixed(1)},${d.acceleration.y?.toFixed(1)},${d.acceleration.z?.toFixed(1)}...`}
+                        {`TX(HID) > ${d.acceleration.x?.toFixed(1)},${d.acceleration.y?.toFixed(1)},${d.acceleration.z?.toFixed(1)}...`}
                       </div>
                     ))}
                   </div>
                 ) : (
                   <div className="text-slate-600 italic">
-                    {status !== ConnectionStatus.CONNECTED ? "WebUSB (CDC) を接続してください..." : "センサーまたはテストモードを開始..."}
+                    {status !== ConnectionStatus.CONNECTED ? "WebHID (Pico) を接続してください..." : "センサーまたはテストモードを開始..."}
                   </div>
                 )}
               </div>
             </div>
-            <p className="text-[10px] text-slate-500 mt-2">※マイコン間のUART速度も {baudRate} に設定してください。</p>
+            <p className="text-[10px] text-slate-500 mt-2">※Raspberry Pi PicoはUSB HIDとして認識されます。</p>
           </div>
 
           <IMUChart data={imuDataBuffer} type="orientation" />
