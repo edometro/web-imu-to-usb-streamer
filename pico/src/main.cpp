@@ -1,55 +1,25 @@
 #include <Arduino.h>
 #include "Adafruit_TinyUSB.h"
 
-// HID report descriptor: Generic In/Out (64 bytes)
-// Usage Page: 0xFF00 (Vendor Defined), Usage: 0x01 (Generic)
-uint8_t const desc_hid_report[] = {
-  TUD_HID_REPORT_DESC_GENERIC_INOUT(64)
-};
 
-Adafruit_USBD_HID usb_hid;
+// USB WebUSB object
+Adafruit_USBD_WebUSB usb_web;
 
-// Report Callback: Host GET_REPORT request (unused here)
-uint16_t get_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer, uint16_t reqlen) {
-  (void)report_id;
-  (void)report_type;
-  (void)buffer;
-  (void)reqlen;
-  return 0;
-}
-
-// Report Callback: PC -> Pico (Output Report)
-void set_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize) {
-  (void)report_id;
-  // Output report received from PC
-  if (report_type == HID_REPORT_TYPE_OUTPUT) {
-    // Send data to STM32 via UART1
-    // The buffer contains 64 bytes. We assume it contains string data.
-    // We should send up to the first null terminator or the whole buffer if binary.
-    // Since it's IMU CSV data string, we can send bytes until 0x00 or bufsize.
-    
-    for (uint16_t i = 0; i < bufsize; i++) {
-        if (buffer[i] == 0) break; // Stop at null terminator
-        Serial1.write(buffer[i]);
-    }
-    
-    // Toggle LED to indicate activity
-    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
-  }
-}
+// Landing Page: Scheme (1: https), URL
+// This is optional but nice to have.
+WEBUSB_URL_DEF(landingPage, 1 /*https*/, "edometro.github.io/web-imu-to-usb-streamer/");
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
-  
-  // UART1 Init (TX=GP4, RX=GP5) - Serial2 on Pico (GP0はPIO USBで使用)
-  Serial2.begin(115200);
 
-  // USB HID Init
-  usb_hid.enableOutEndpoint(true);
-  usb_hid.setPollInterval(2);
-  usb_hid.setReportDescriptor(desc_hid_report, sizeof(desc_hid_report));
-  usb_hid.setReportCallback(get_report_callback, set_report_callback);
-  usb_hid.begin();
+  // Configure WebUSB
+  usb_web.setLandingPage(&landingPage);
+  usb_web.begin();
+
+  // UART2 Init (TX=GP4, RX=GP5) for STM32 communication
+  // Note: Serial1 is usually GP0/GP1 but we use Serial2 to avoid conflict with PIO USB on GP0/GP1 if used.
+  // Actually, PIO USB uses specific pins defined by PIO_USB_DP_PIN, default 0.
+  Serial2.begin(115200);
 
   // Wait for USB mount
   while (!TinyUSBDevice.mounted()) {
@@ -61,8 +31,21 @@ void setup() {
 }
 
 void loop() {
-  // Nothing to do in loop, handled by callbacks
-  // If we needed to send data back to PC (STM32 -> Console), we would read Serial1 here 
-  // and send input report.
-  delay(10);
+  // LED blink to show activity
+  static uint32_t led_timer = 0;
+  if (millis() - led_timer > 1000) {
+    led_timer = millis();
+    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+  }
+
+  // USB WebUSB -> UART2 (STM32)
+  if (usb_web.available()) {
+    Serial2.write(usb_web.read());
+  }
+
+  // UART2 (STM32) -> USB WebUSB
+  // Echo back or send debug info
+  if (Serial2.available()) {
+    usb_web.write(Serial2.read());
+  }
 }

@@ -1,0 +1,1 @@
+pio-compiledb -e rpipico2 -t upload
