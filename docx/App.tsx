@@ -9,7 +9,7 @@ const App: React.FC = () => {
   const [status, setStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
   const [imuDataBuffer, setImuDataBuffer] = useState<IMUData[]>([]);
   const [baudRate, setBaudRate] = useState<number>(115200);
-  const [insight, setInsight] = useState<string>("シリアル接続してセンサーを有効にすると、AI解析が始まります。");
+  const [insight, setInsight] = useState<string>("USB JTAG/Serialに接続してセンサーを有効にすると、AI解析が始まります。");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isTestMode, setIsTestMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +48,7 @@ const App: React.FC = () => {
 
   const connectSerial = async () => {
     if (!isSerialSupported) {
-      setError("このブラウザはWeb Serial APIに対応していません。");
+      setError("このブラウザはWeb Serial APIに対応していません。PC版Chrome/Edgeを使用してください。");
       return;
     }
 
@@ -63,7 +63,7 @@ const App: React.FC = () => {
     } catch (err: any) {
       console.error("Serial Request Error:", err);
       if (err.name === 'NotFoundError') {
-        setError("デバイスが選択されませんでした。OTGアダプタ経由でマイコンが接続されているか確認してください。");
+        setError("デバイスが選択されませんでした。USB JTAG/serial debug unit が接続されているか確認してください。");
       } else {
         setError(`接続エラー: ${err.message}`);
       }
@@ -203,7 +203,7 @@ const App: React.FC = () => {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-white">IMU UART Bridge</h1>
-            <p className="text-slate-400 text-sm">2台のマイコンでスマホとPCを繋ぐ</p>
+            <p className="text-slate-400 text-sm">USB JTAG/Serial 経由でIMUデータを送信</p>
           </div>
         </div>
 
@@ -231,7 +231,7 @@ const App: React.FC = () => {
               }`}
           >
             <i className={`fas ${status === ConnectionStatus.CONNECTED ? 'fa-unlink' : 'fa-plug'}`}></i>
-            {status === ConnectionStatus.CONNECTED ? '切断' : 'マイコン1に接続'}
+            {status === ConnectionStatus.CONNECTED ? '切断' : 'USB JTAG/Serial 接続'}
           </button>
         </div>
       </header>
@@ -244,26 +244,26 @@ const App: React.FC = () => {
           </h3>
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-xs">
             <div className="flex flex-col items-center gap-2 p-3 bg-slate-900 rounded-xl border border-slate-800 w-full">
-              <i className="fas fa-mobile-alt text-2xl text-slate-400"></i>
-              <span>① スマホ (このアプリ)</span>
+              <i className="fas fa-desktop text-2xl text-slate-400"></i>
+              <span>① PC (このアプリ)</span>
             </div>
             <i className="fas fa-arrow-right text-slate-600 hidden md:block"></i>
             <div className="flex flex-col items-center gap-2 p-3 bg-slate-900 rounded-xl border border-indigo-900 w-full relative">
-              <span className="absolute -top-2 left-2 bg-indigo-600 text-[8px] px-1 rounded uppercase">Host Mode</span>
+              <span className="absolute -top-2 left-2 bg-indigo-600 text-[8px] px-1 rounded uppercase">USB JTAG</span>
               <i className="fas fa-usb text-2xl text-indigo-400"></i>
-              <span>OTGアダプタ</span>
+              <span>USB JTAG/Serial</span>
             </div>
             <i className="fas fa-arrow-right text-slate-600 hidden md:block"></i>
             <div className="flex flex-col items-center gap-2 p-3 bg-slate-900 rounded-xl border border-slate-800 w-full">
               <i className="fas fa-memory text-2xl text-emerald-400"></i>
-              <span>② マイコン1</span>
-              <span className="text-[10px] text-slate-500">TX → マイコン2 RX</span>
+              <span>② XIAO ESP32-C3</span>
+              <span className="text-[10px] text-slate-500">D6(TX) → STM32 D0(RX)</span>
             </div>
             <i className="fas fa-exchange-alt text-slate-600 hidden md:block"></i>
             <div className="flex flex-col items-center gap-2 p-3 bg-slate-900 rounded-xl border border-slate-800 w-full">
               <i className="fas fa-memory text-2xl text-emerald-400"></i>
-              <span>③ マイコン2</span>
-              <span className="text-[10px] text-slate-500">USB → PC</span>
+              <span>③ STM32 F303K8</span>
+              <span className="text-[10px] text-slate-500">USB → PC (シリアルモニタ)</span>
             </div>
             <i className="fas fa-arrow-right text-slate-600 hidden md:block"></i>
             <div className="flex flex-col items-center gap-2 p-3 bg-slate-900 rounded-xl border border-slate-800 w-full">
@@ -339,7 +339,7 @@ const App: React.FC = () => {
                   </div>
                 ) : (
                   <div className="text-slate-600 italic">
-                    {status !== ConnectionStatus.CONNECTED ? "マイコン1を接続してください..." : "センサーまたはテストモードを開始..."}
+                    {status !== ConnectionStatus.CONNECTED ? "USB JTAG/Serial を接続してください..." : "センサーまたはテストモードを開始..."}
                   </div>
                 )}
               </div>
