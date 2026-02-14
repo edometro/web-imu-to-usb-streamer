@@ -86,6 +86,7 @@ void setup() {
     delay(50);
   }
   digitalWrite(LED_BUILTIN, LOW);
+  usb_web.println("PICO_READY");
 }
 
 void loop() {
@@ -96,11 +97,20 @@ void loop() {
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
   }
 
+  // Periodic Heartbeat to verify RX path
+  static uint32_t hb_timer = 0;
+  if (millis() - hb_timer > 2000) {
+    hb_timer = millis();
+    usb_web.println("HEARTBEAT");
+  }
+
   // USB WebUSB -> UART2 & Parse for CAN
   while (usb_web.available()) {
     char c = usb_web.read();
     Serial2.write(c); // Forward to UART
     
+    if (c == '\r') continue; // Ignore CR for robust parsing
+
     // Buffer for CSV parsing
     if (c == '\n') {
       // Parse CSV: alpha,beta,gamma,ax,ay,az
@@ -119,6 +129,10 @@ void loop() {
 
       if (count == 6) {
         sendIMUtoCAN(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]);
+      } else {
+        // Log parse failure
+        usb_web.print("ERR:PARSE_CNT:");
+        usb_web.println(count);
       }
       inputBuffer = "";
     } else {
