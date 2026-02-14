@@ -55,7 +55,10 @@ const App: React.FC = () => {
     try {
       setError(null);
       setStatus(ConnectionStatus.CONNECTING);
-      const port = await (navigator as any).serial.requestPort();
+      // ESP32-C3 USB JTAG/serial debug unit: VID=0x303A, PID=0x1001
+      const port = await (navigator as any).serial.requestPort({
+        filters: [{ usbVendorId: 0x303A, usbProductId: 0x1001 }]
+      });
       await initializePort(port);
     } catch (err: any) {
       console.error("Serial Request Error:", err);
