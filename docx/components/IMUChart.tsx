@@ -41,21 +41,29 @@ const IMUChart: React.FC<IMUChartProps> = ({ data, type }) => {
 
   const labels = type === 'acceleration'
     ? { x: 'Acc X', y: 'Acc Y', z: 'Acc Z' }
-    : { x: 'Alpha', y: 'Beta', z: 'Gamma' };
+    : { x: 'Alpha (rad)', y: 'Beta (rad)', z: 'Gamma (rad)' };
+
+  const unit = type === 'acceleration' ? 'm/s²' : 'rad';
 
   return (
     <div className="h-64 w-full bg-slate-800/50 rounded-xl p-4 border border-slate-700">
       <h3 className="text-sm font-semibold mb-2 text-slate-400 uppercase tracking-wider">
-        {type === 'acceleration' ? 'Linear Acceleration (m/s²)' : 'Device Orientation (rad)'}
+        {type === 'acceleration' ? `Linear Acceleration (${unit})` : `Device Orientation (${unit})`}
       </h3>
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
           <XAxis dataKey="name" hide />
-          <YAxis stroke="#94a3b8" fontSize={10} width={30} />
+          <YAxis
+            stroke="#94a3b8"
+            fontSize={10}
+            width={35}
+            domain={type === 'orientation' ? [-6.3, 6.3] : ['auto', 'auto']}
+          />
           <Tooltip
             contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', fontSize: '12px' }}
             itemStyle={{ padding: '0px' }}
+            formatter={(value: number) => [value?.toFixed(3), '']}
           />
           <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }} />
           <Line
