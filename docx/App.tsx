@@ -216,7 +216,33 @@ const App: React.FC = () => {
     isReadingRef.current = false;
   };
 
-  const updateBuffer = (partialData: Partial<IMUData>) => {
+  const connectWebUSB = async () => {
+    if (!isWebUSBSupported) {
+      setError("このブラウザはWebUSB APIに対応していません。Chrome/Edgeを使用してください。");
+      return;
+    }
+
+    try {
+      setError(null);
+      // Raspberry Pi Pico VID=0x2E8A
+      const device = await (navigator as any).usb.requestDevice({
+        filters: [
+          { vendorId: 0x2E8A }
+        ]
+      });
+      await initializeWebUSB(device);
+    } catch (err: any) {
+      console.error("WebUSB Request Error:", err);
+      if (err.name === 'NotFoundError') {
+        setError("デバイスが選択されませんでした。USB接続を確認してください。");
+      } else {
+        setError(`接続エラー: ${err.message}`);
+      }
+      setStatus(ConnectionStatus.DISCONNECTED);
+    }
+  };
+
+  const disconnectWebUSB = async () => {
     const now = Date.now();
     const last = bufferRef.current[bufferRef.current.length - 1];
 
