@@ -206,7 +206,7 @@ const App: React.FC = () => {
 
   const handleOrientation = useCallback((e: DeviceOrientationEvent) => {
     if (!isTestModeRef.current && isStreamingRef.current) {
-      // Convert degrees to radians
+      // Convert degrees to radians as requested
       const toRad = (deg: number | null) => (deg !== null ? (deg * Math.PI) / 180 : 0);
       updateBuffer({
         timestamp: Date.now(),
@@ -217,7 +217,7 @@ const App: React.FC = () => {
         }
       });
     }
-  }, []); // uses refs, no deps
+  }, []);
 
   const handleMotion = useCallback((e: DeviceMotionEvent) => {
     if (!isTestModeRef.current && isStreamingRef.current) {
@@ -249,12 +249,12 @@ const App: React.FC = () => {
     let timer: number;
     if (isTestMode) {
       timer = window.setInterval(() => {
-        const v = Math.sin(Date.now() / 500) * 10;
-        // In test mode, we'll keep the orientation values safe but convert to small radian-like values
+        const v = Math.sin(Date.now() / 500); // v in [-1, 1]
+        // Test mode: Send sin wave as absolute orientation (rad)
         updateBuffer({
           timestamp: Date.now(),
-          acceleration: { x: v, y: v / 2, z: 0 },
-          orientation: { alpha: (v * 5 * Math.PI) / 180, beta: 0, gamma: 0 }
+          acceleration: { x: v * 5, y: v * 2, z: 0 },
+          orientation: { alpha: v * Math.PI, beta: (v * Math.PI) / 4, gamma: 0 }
         });
       }, 50);
     }
