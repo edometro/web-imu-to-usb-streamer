@@ -216,33 +216,7 @@ const App: React.FC = () => {
     isReadingRef.current = false;
   };
 
-  const connectWebUSB = async () => {
-    if (!isWebUSBSupported) {
-      setError("このブラウザはWebUSB APIに対応していません。Chrome/Edgeを使用してください。");
-      return;
-    }
-
-    try {
-      setError(null);
-      // Raspberry Pi Pico VID=0x2E8A
-      const device = await (navigator as any).usb.requestDevice({
-        filters: [
-          { vendorId: 0x2E8A }
-        ]
-      });
-      await initializeWebUSB(device);
-    } catch (err: any) {
-      console.error("WebUSB Request Error:", err);
-      if (err.name === 'NotFoundError') {
-        setError("デバイスが選択されませんでした。USB接続を確認してください。");
-      } else {
-        setError(`接続エラー: ${err.message}`);
-      }
-      setStatus(ConnectionStatus.DISCONNECTED);
-    }
-  };
-
-  const disconnectWebUSB = async () => {
+  const updateBuffer = (partialData: Partial<IMUData>) => {
     const now = Date.now();
     const last = bufferRef.current[bufferRef.current.length - 1];
 
@@ -282,6 +256,49 @@ const App: React.FC = () => {
           addLog('tx', `WRITE FAIL: ${e.message}`);
         });
     }
+  };
+
+  const connectWebUSB = async () => {
+    if (!isWebUSBSupported) {
+      setError("このブラウザはWebUSB APIに対応していません。Chrome/Edgeを使用してください。");
+      return;
+    }
+
+    try {
+      setError(null);
+      // Raspberry Pi Pico VID=0x2E8A
+      const device = await (navigator as any).usb.requestDevice({
+        filters: [
+          { vendorId: 0x2E8A }
+        ]
+      });
+      await initializeWebUSB(device);
+    } catch (err: any) {
+      console.error("WebUSB Request Error:", err);
+      if (err.name === 'NotFoundError') {
+        setError("デバイスが選択されませんでした。USB接続を確認してください。");
+      } else {
+        setError(`接続エラー: ${err.message}`);
+      }
+      setStatus(ConnectionStatus.DISCONNECTED);
+    }
+  };
+
+  const disconnectWebUSB = async () => {
+    isReadingRef.current = false;
+    const device = deviceRef.current;
+
+    if (device && device.opened) {
+      try {
+        await device.close();
+      } catch (e) {
+        console.warn("Close error", e);
+      }
+    }
+
+    deviceRef.current = null;
+    setStatus(ConnectionStatus.DISCONNECTED);
+    setError(null);
   };
 
   // Test Mode Loop
