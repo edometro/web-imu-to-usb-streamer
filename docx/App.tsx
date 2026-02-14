@@ -42,12 +42,19 @@ const App: React.FC = () => {
         await device.selectConfiguration(1);
       }
 
+      console.log("WebUSB: Device Open. Config:", device.configuration);
+
       // Find Vendor Specific Interface
       let vendorInterface: USBInterface | undefined;
-      let interfaceIndex = 0;
+      let interfaceIndex = -1;
 
       const config = device.configuration;
       if (config) {
+        // Log all interfaces
+        config.interfaces.forEach((iface, idx) => {
+          console.log(`Interface [${idx}]: Number=${iface.interfaceNumber}`, iface.alternates);
+        });
+
         // Look for Vendor Specific Class (0xFF)
         vendorInterface = config.interfaces.find(iface =>
           iface.alternates[0].interfaceClass === USB_VENDOR_SPECIFIC_CLASS
@@ -56,6 +63,7 @@ const App: React.FC = () => {
 
       // Fallback: If not found, try the first interface (often just one for simple devices)
       if (!vendorInterface && config && config.interfaces.length > 0) {
+        console.warn("Vendor Interface not found by Class 0xFF. Falling back to Interface[0].");
         vendorInterface = config.interfaces[0];
       }
 
@@ -63,13 +71,18 @@ const App: React.FC = () => {
         throw new Error("Vendor Specific Interfaceが見つかりませんでした。");
       }
 
+      console.log("Selected Interface:", vendorInterface);
+
       interfaceIndex = vendorInterface.interfaceNumber;
       await device.claimInterface(interfaceIndex);
+      console.log("Interface Claimed:", interfaceIndex);
 
       interfaceNumberRef.current = interfaceIndex;
 
       // Find Endpoints
       const endpoints = vendorInterface.alternates[0].endpoints;
+      console.log("Endpoints found:", endpoints);
+
       const inEp = endpoints.find(e => e.direction === 'in');
       const outEp = endpoints.find(e => e.direction === 'out');
 
@@ -79,6 +92,8 @@ const App: React.FC = () => {
 
       endpointInRef.current = inEp.endpointNumber;
       endpointOutRef.current = outEp.endpointNumber;
+
+      console.log(`Endpoints Configured -> IN: ${inEp.endpointNumber}, OUT: ${outEp.endpointNumber}`);
       deviceRef.current = device;
 
       // No Line Coding needed for Vendor Class (Firmware handles UART baud rate)
