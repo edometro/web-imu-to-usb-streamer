@@ -184,15 +184,21 @@ const App: React.FC = () => {
 
     try {
       setError(null);
-      // ESP32-C3 VID=0x303A
+      // ESP32-C3 VID=0x303A 以外にも、Seeed(0x2886)、CH34x(0x1a86)、CP210x(0x10c4)、FTDI(0x0403) を追加
       const device = await (navigator as any).usb.requestDevice({
-        filters: [{ vendorId: 0x303A }]
+        filters: [
+          { vendorId: 0x303A }, // Espressif
+          { vendorId: 0x2886 }, // Seeed Studio
+          { vendorId: 0x1A86 }, // WCH (CH34x)
+          { vendorId: 0x10C4 }, // Silicon Labs (CP210x)
+          { vendorId: 0x0403 }  // FTDI
+        ]
       });
       await initializeWebUSB(device);
     } catch (err: any) {
       console.error("WebUSB Request Error:", err);
       if (err.name === 'NotFoundError') {
-        setError("デバイスが選択されませんでした。");
+        setError("デバイスが選択されませんでした。USB接続を確認してください。");
       } else {
         setError(`接続エラー: ${err.message}`);
       }
