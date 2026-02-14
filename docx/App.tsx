@@ -4,12 +4,15 @@ import { ConnectionStatus, IMUData, SerialSettings } from './types';
 import IMUChart from './components/IMUChart';
 import { analyzeMovement } from './services/geminiService';
 
+// WebUSB Vendor Specific Class Constants
+const USB_VENDOR_SPECIFIC_CLASS = 0xFF;
+
 const App: React.FC = () => {
   // State
   const [status, setStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
   const [imuDataBuffer, setImuDataBuffer] = useState<IMUData[]>([]);
-  const [baudRate, setBaudRate] = useState<number>(115200);
-  const [insight, setInsight] = useState<string>("USB HID (Pico)に接続してセンサーを有効にすると、AI解析が始まります。");
+  // BaudRate setting is not needed for Vendor Class (fixed in firmware)
+  const [insight, setInsight] = useState<string>("USB (Vendor Class)に接続してセンサーを有効にすると、AI解析が始まります。");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isTestMode, setIsTestMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,82 +20,143 @@ const App: React.FC = () => {
 
   // System capability checks
   const isSecureContext = window.isSecureContext;
-  const isWebHIDSupported = 'hid' in navigator;
+  const isWebUSBSupported = 'usb' in navigator;
 
-  // Refs for WebHID persistence
-  const deviceRef = useRef<HIDDevice | null>(null);
+  // Refs for WebUSB persistence
+  const deviceRef = useRef<USBDevice | null>(null);
+  const endpointInRef = useRef<number>(0);
+  const endpointOutRef = useRef<number>(0);
+  const interfaceNumberRef = useRef<number>(0);
   const encoderRef = useRef(new TextEncoder());
   const bufferRef = useRef<IMUData[]>([]);
+  const isReadingRef = useRef(false);
 
-  // Function to initialize WebHID device
-  const initializeWebHID = async (device: HIDDevice) => {
+  // Function to initialize WebUSB device (Vendor Specific)
+  const initializeWebUSB = async (device: USBDevice) => {
     try {
       setStatus(ConnectionStatus.CONNECTING);
+      await device.open();
 
-      if (!device.opened) {
-        await device.open();
+      // Select Configuration 1
+      if (device.configuration === null) {
+        await device.selectConfiguration(1);
       }
 
+      // Find Vendor Specific Interface
+      let vendorInterface: USBInterface | undefined;
+      let interfaceIndex = 0;
+
+      const config = device.configuration;
+      if (config) {
+        // Look for Vendor Specific Class (0xFF)
+        vendorInterface = config.interfaces.find(iface =>
+          iface.alternates[0].interfaceClass === USB_VENDOR_SPECIFIC_CLASS
+        );
+      }
+
+      // Fallback: If not found, try the first interface (often just one for simple devices)
+      if (!vendorInterface && config && config.interfaces.length > 0) {
+        vendorInterface = config.interfaces[0];
+      }
+
+      if (!vendorInterface) {
+        throw new Error("Vendor Specific Interfaceが見つかりませんでした。");
+      }
+
+      interfaceIndex = vendorInterface.interfaceNumber;
+      await device.claimInterface(interfaceIndex);
+
+      interfaceNumberRef.current = interfaceIndex;
+
+      // Find Endpoints
+      const endpoints = vendorInterface.alternates[0].endpoints;
+      const inEp = endpoints.find(e => e.direction === 'in');
+      const outEp = endpoints.find(e => e.direction === 'out');
+
+      if (!inEp || !outEp) {
+        throw new Error("Endpointsが見つかりませんでした。");
+      }
+
+      endpointInRef.current = inEp.endpointNumber;
+      endpointOutRef.current = outEp.endpointNumber;
       deviceRef.current = device;
 
-      // Listen for input reports (from Pico) - Optional for now
-      device.addEventListener('inputreport', (event: any) => {
-        // const { data, device, reportId } = event;
-        // console.log("HID RX:", new Uint8Array(data.buffer));
-      });
-
-      // Handle disconnection
-      device.addEventListener('disconnect', () => {
-        disconnectHID();
-        setError("マイコンが取り外されました。");
-      });
+      // No Line Coding needed for Vendor Class (Firmware handles UART baud rate)
 
       setStatus(ConnectionStatus.CONNECTED);
       setError(null);
 
-      // navigator.hid.ondisconnect handler
-      (navigator as any).hid.addEventListener('disconnect', (event: any) => {
+      startReading();
+
+      // device disconnect listener
+      (navigator as any).usb.onconnect = null; // reset
+      (navigator as any).usb.ondisconnect = (event: any) => {
         if (event.device === device) {
-          disconnectHID();
+          disconnectWebUSB();
           setError("マイコンが取り外されました。");
         }
-      });
+      };
 
     } catch (err: any) {
-      console.error("WebHID Init Error:", err);
-      setError("WebHID接続エラー: " + err.message);
-      disconnectHID(); // cleanup
+      console.error("WebUSB Init Error:", err);
+      setError("WebUSB接続エラー: " + err.message);
+      disconnectWebUSB(); // cleanup
     }
   };
 
-  const connectHID = async () => {
-    if (!isWebHIDSupported) {
-      setError("このブラウザはWebHID APIに対応していません。Chrome/Edgeを使用してください。");
+  const startReading = async () => {
+    isReadingRef.current = true;
+    const device = deviceRef.current;
+
+    while (isReadingRef.current && device && device.opened) {
+      try {
+        const result = await device.transferIn(endpointInRef.current, 64);
+
+        if (result.status === 'ok' && result.data) {
+          // Data received from Pico (debug/echo)
+          // const text = new TextDecoder().decode(result.data);
+          // console.log("RX:", text);
+        }
+      } catch (error: any) {
+        if (!device.opened) break;
+        console.warn("Read error:", error);
+        await new Promise(r => setTimeout(r, 100));
+      }
+    }
+  };
+
+  const connectWebUSB = async () => {
+    if (!isWebUSBSupported) {
+      setError("このブラウザはWebUSB APIに対応していません。Chrome/Edgeを使用してください。");
       return;
     }
 
     try {
       setError(null);
-      // Raspberry Pi Pico VID=0x2E8A, Generic Usage Page=0xFF00
-      const devices = await (navigator as any).hid.requestDevice({
-        filters: [{ vendorId: 0x2E8A, usagePage: 0xFF00 }]
+      // Raspberry Pi Pico VID=0x2E8A
+      // Specifying classCode: 0xFF helps narrow down to our custom interface
+      const device = await (navigator as any).usb.requestDevice({
+        filters: [
+          { vendorId: 0x2E8A, classCode: 0xFF }, // Raspberry Pi (Vendor Specific)
+          { vendorId: 0x2E8A } // Fallback for broader match
+        ]
       });
-
-      if (devices.length === 0) {
-        setError("デバイスが選択されませんでした。");
-        return;
-      }
-
-      await initializeWebHID(devices[0]);
+      await initializeWebUSB(device);
     } catch (err: any) {
-      console.error("WebHID Request Error:", err);
-      setError(`接続エラー: ${err.message}`);
+      console.error("WebUSB Request Error:", err);
+      if (err.name === 'NotFoundError') {
+        setError("デバイスが選択されませんでした。USB接続を確認してください。");
+      } else {
+        setError(`接続エラー: ${err.message}`);
+      }
       setStatus(ConnectionStatus.DISCONNECTED);
     }
   };
 
-  const disconnectHID = async () => {
+  const disconnectWebUSB = async () => {
+    isReadingRef.current = false;
     const device = deviceRef.current;
+
     if (device && device.opened) {
       try {
         await device.close();
@@ -151,23 +215,13 @@ const App: React.FC = () => {
 
     if (bufferRef.current.length > 50) bufferRef.current.shift();
 
-    // USB HIDに送信
+    // Send CSV to USB (WebUSB transferOut)
     if (deviceRef.current && deviceRef.current.opened && status === ConnectionStatus.CONNECTED) {
       const csv = `${newData.orientation.alpha?.toFixed(2)},${newData.orientation.beta?.toFixed(2)},${newData.orientation.gamma?.toFixed(2)},${newData.acceleration.x?.toFixed(2)},${newData.acceleration.y?.toFixed(2)},${newData.acceleration.z?.toFixed(2)}\n`;
+      const data = encoderRef.current.encode(csv);
 
-      // Create 64 byte buffer for HID report
-      const reportData = new Uint8Array(64);
-      const encoded = encoderRef.current.encode(csv);
-
-      // Copy data to buffer (truncate if too long)
-      for (let i = 0; i < Math.min(encoded.length, 64); i++) {
-        reportData[i] = encoded[i];
-      }
-
-      // Send Report ID 0 (if not defined in descriptor)
-      // Usually generic HID uses Report ID 0
-      deviceRef.current.sendReport(0, reportData)
-        .catch(e => console.error("HID Write fail", e));
+      deviceRef.current.transferOut(endpointOutRef.current, data)
+        .catch(e => console.error("Write fail", e));
     }
   };
 
@@ -233,8 +287,8 @@ const App: React.FC = () => {
             <i className="fas fa-project-diagram text-2xl text-white"></i>
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-white">IMU HID Bridge</h1>
-            <p className="text-slate-400 text-sm">WebHID (Pico) 経由でIMUデータを送信</p>
+            <h1 className="text-2xl font-bold text-white">IMU USB Bridge</h1>
+            <p className="text-slate-400 text-sm">WebUSB (Pico Vendor Class) 経由でデータ送信</p>
           </div>
         </div>
 
@@ -246,23 +300,13 @@ const App: React.FC = () => {
             <i className="fas fa-question-circle mr-2"></i>接続ガイド
           </button>
 
-          <select
-            className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none"
-            value={baudRate}
-            onChange={(e) => setBaudRate(parseInt(e.target.value))}
-            disabled={status === ConnectionStatus.CONNECTED}
-          >
-            <option value={9600}>9600 bps</option>
-            <option value={115200}>115200 bps</option>
-          </select>
-
           <button
-            onClick={status === ConnectionStatus.CONNECTED ? disconnectHID : connectHID}
+            onClick={status === ConnectionStatus.CONNECTED ? disconnectWebUSB : connectWebUSB}
             className={`px-4 py-2 rounded-lg text-sm font-semibold shadow-lg flex items-center gap-2 transition-all ${status === ConnectionStatus.CONNECTED ? 'bg-red-500/20 text-red-400 border border-red-500/50' : 'bg-indigo-600 hover:bg-indigo-500 text-white'
               }`}
           >
             <i className={`fas ${status === ConnectionStatus.CONNECTED ? 'fa-unlink' : 'fa-plug'}`}></i>
-            {status === ConnectionStatus.CONNECTED ? '切断' : 'HID接続'}
+            {status === ConnectionStatus.CONNECTED ? '切断' : 'USB接続'}
           </button>
         </div>
       </header>
@@ -280,15 +324,15 @@ const App: React.FC = () => {
             </div>
             <i className="fas fa-arrow-right text-slate-600 hidden md:block"></i>
             <div className="flex flex-col items-center gap-2 p-3 bg-slate-900 rounded-xl border border-indigo-900 w-full relative">
-              <span className="absolute -top-2 left-2 bg-indigo-600 text-[8px] px-1 rounded uppercase">WebHID</span>
+              <span className="absolute -top-2 left-2 bg-indigo-600 text-[8px] px-1 rounded uppercase">WebUSB</span>
               <i className="fas fa-usb text-2xl text-indigo-400"></i>
-              <span>Generic HID</span>
+              <span>Vendor Class</span>
             </div>
             <i className="fas fa-arrow-right text-slate-600 hidden md:block"></i>
             <div className="flex flex-col items-center gap-2 p-3 bg-slate-900 rounded-xl border border-slate-800 w-full">
               <i className="fas fa-microchip text-2xl text-pink-400"></i>
-              <span>② Raspberry Pi Pico</span>
-              <span className="text-[10px] text-slate-500">GP0(TX) → STM32 D0(RX)</span>
+              <span>② Raspberry Pi Pico 2</span>
+              <span className="text-[10px] text-slate-500">GP4(TX) → STM32 D0(RX)</span>
             </div>
             <i className="fas fa-exchange-alt text-slate-600 hidden md:block"></i>
             <div className="flex flex-col items-center gap-2 p-3 bg-slate-900 rounded-xl border border-slate-800 w-full">
@@ -356,7 +400,7 @@ const App: React.FC = () => {
 
           <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <i className="fas fa-terminal text-emerald-400"></i> 送信状況 (WebHID)
+              <i className="fas fa-terminal text-emerald-400"></i> 送信状況 (WebUSB Vendor)
             </h2>
             <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-xs text-emerald-500 h-24 overflow-hidden relative">
               <div className="absolute inset-0 p-4 overflow-y-auto flex flex-col-reverse">
@@ -364,18 +408,18 @@ const App: React.FC = () => {
                   <div>
                     {imuDataBuffer.slice(-3).map((d, i) => (
                       <div key={i} className="whitespace-nowrap opacity-80 border-l-2 border-emerald-900 pl-2 mb-1">
-                        {`TX(HID) > ${d.acceleration.x?.toFixed(1)},${d.acceleration.y?.toFixed(1)},${d.acceleration.z?.toFixed(1)}...`}
+                        {`TX(WebUSB) > ${d.acceleration.x?.toFixed(1)},${d.acceleration.y?.toFixed(1)},${d.acceleration.z?.toFixed(1)}...`}
                       </div>
                     ))}
                   </div>
                 ) : (
                   <div className="text-slate-600 italic">
-                    {status !== ConnectionStatus.CONNECTED ? "WebHID (Pico) を接続してください..." : "センサーまたはテストモードを開始..."}
+                    {status !== ConnectionStatus.CONNECTED ? "WebUSB (Pico) を接続してください..." : "センサーまたはテストモードを開始..."}
                   </div>
                 )}
               </div>
             </div>
-            <p className="text-[10px] text-slate-500 mt-2">※Raspberry Pi PicoはUSB HIDとして認識されます。</p>
+            <p className="text-[10px] text-slate-500 mt-2">※Raspberry Pi Picoは独自USBクラスとして認識されます。</p>
           </div>
 
           <IMUChart data={imuDataBuffer} type="orientation" />
