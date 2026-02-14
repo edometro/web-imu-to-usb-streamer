@@ -114,30 +114,45 @@ void loop() {
     char c = usb_web.read();
     Serial2.write(c); // Forward to UART
     
+    // Quick visual feedback on RX
+    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+
     if (c == '\r') continue; // Ignore CR for robust parsing
 
-    // Buffer for CSV parsing
-    if (c == '\n') {
-      // Parse CSV: alpha,beta,gamma,ax,ay,az
-      float vals[6] = {0};
-      int count = 0;
-      int startPos = 0;
-      for (int i = 0; i < inputBuffer.length() && count < 6; i++) {
-        if (inputBuffer.charAt(i) == ',') {
-          vals[count++] = inputBuffer.substring(startPos, i).toFloat();
-          startPos = i + 1;
-        }
-      }
-      if (count < 6 && startPos < inputBuffer.length()) {
-        vals[count++] = inputBuffer.substring(startPos).toFloat();
-      }
+    // Immediate Echo for debugging
+    usb_web.print("ECHO:");
+    usb_web.println(c == '\n' ? "\\n" : String(c));
 
-      if (count == 6) {
-        sendIMUtoCAN(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]);
+    // Buffer for CSV parsing & commands
+    if (c == '\n') {
+      inputBuffer.trim();
+      
+      if (inputBuffer == "ping") {
+        usb_web.println("PONG");
       } else {
-        // Log parse failure
-        usb_web.print("ERR:PARSE_CNT:");
-        usb_web.println(count);
+        // Parse CSV: alpha,beta,gamma,ax,ay,az
+        float vals[6] = {0};
+        int count = 0;
+        int startPos = 0;
+        for (int i = 0; i < inputBuffer.length() && count < 6; i++) {
+          if (inputBuffer.charAt(i) == ',') {
+            vals[count++] = inputBuffer.substring(startPos, i).toFloat();
+            startPos = i + 1;
+          }
+        }
+        if (count < 6 && startPos < inputBuffer.length()) {
+          vals[count++] = inputBuffer.substring(startPos).toFloat();
+        }
+
+        if (count == 6) {
+          sendIMUtoCAN(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]);
+        } else if (inputBuffer.length() > 0) {
+          // Log parse failure only if not empty
+          usb_web.print("ERR:PARSE_CNT:");
+          usb_web.println(count);
+          usb_web.print("RAW:");
+          usb_web.println(inputBuffer);
+        }
       }
       inputBuffer = "";
     } else {

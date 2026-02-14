@@ -215,6 +215,18 @@ const App: React.FC = () => {
     }
   }, [isTestMode]);
 
+  const manualPing = () => {
+    if (deviceRef.current && deviceRef.current.opened && status === ConnectionStatus.CONNECTED) {
+      const pingStr = "ping\n";
+      const data = encoderRef.current.encode(pingStr);
+      deviceRef.current.transferOut(endpointOutRef.current, data)
+        .then(() => addLog('tx', 'PING SENT (ping)'))
+        .catch(e => addLog('tx', `PING FAILED: ${e.message}`));
+    } else {
+      setError("USBが接続されていません。");
+    }
+  };
+
   const updateBuffer = (partialData: Partial<IMUData>) => {
     const now = Date.now();
     const last = bufferRef.current[bufferRef.current.length - 1];
@@ -248,11 +260,11 @@ const App: React.FC = () => {
 
       deviceRef.current.transferOut(endpointOutRef.current, data)
         .then(() => {
-          addLog('tx', csv.trim());
+          // console.log("TX:", csv.trim());
         })
         .catch(e => {
           console.error("Write fail", e);
-          addLog('tx', `FAILED: ${e.message}`);
+          addLog('tx', `WRITE FAIL: ${e.message}`);
         });
     }
   };
@@ -437,9 +449,17 @@ const App: React.FC = () => {
       {/* Full Width Integrated Terminal */}
       <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700 shadow-2xl">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <i className="fas fa-terminal text-emerald-400"></i> Unified USB Terminal (WebUSB Vendor Class)
-          </h2>
+          <div className="flex items-center gap-4">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <i className="fas fa-terminal text-emerald-400"></i> Unified USB Terminal
+            </h2>
+            <button
+              onClick={manualPing}
+              className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold rounded-lg transition-colors shadow-lg shadow-indigo-500/20 flex items-center gap-1"
+            >
+              <i className="fas fa-satellite-dish"></i> SEND PING
+            </button>
+          </div>
           <div className="flex gap-2">
             <span className="flex items-center gap-1 text-[10px] text-emerald-400">
               <span className="w-2 h-2 bg-emerald-600 rounded-full"></span> TX
