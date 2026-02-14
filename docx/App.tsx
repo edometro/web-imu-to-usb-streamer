@@ -206,7 +206,16 @@ const App: React.FC = () => {
 
   const handleOrientation = useCallback((e: DeviceOrientationEvent) => {
     if (!isTestModeRef.current && isStreamingRef.current) {
-      updateBuffer({ timestamp: Date.now(), orientation: { alpha: e.alpha, beta: e.beta, gamma: e.gamma } });
+      // Convert degrees to radians
+      const toRad = (deg: number | null) => (deg !== null ? (deg * Math.PI) / 180 : 0);
+      updateBuffer({
+        timestamp: Date.now(),
+        orientation: {
+          alpha: toRad(e.alpha),
+          beta: toRad(e.beta),
+          gamma: toRad(e.gamma)
+        }
+      });
     }
   }, []); // uses refs, no deps
 
@@ -241,7 +250,12 @@ const App: React.FC = () => {
     if (isTestMode) {
       timer = window.setInterval(() => {
         const v = Math.sin(Date.now() / 500) * 10;
-        updateBuffer({ timestamp: Date.now(), acceleration: { x: v, y: v / 2, z: 0 }, orientation: { alpha: v * 5, beta: 0, gamma: 0 } });
+        // In test mode, we'll keep the orientation values safe but convert to small radian-like values
+        updateBuffer({
+          timestamp: Date.now(),
+          acceleration: { x: v, y: v / 2, z: 0 },
+          orientation: { alpha: (v * 5 * Math.PI) / 180, beta: 0, gamma: 0 }
+        });
       }, 50);
     }
     return () => clearInterval(timer);

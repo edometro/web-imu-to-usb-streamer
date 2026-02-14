@@ -46,7 +46,7 @@ const IMUChart: React.FC<IMUChartProps> = ({ data, type }) => {
   return (
     <div className="h-64 w-full bg-slate-800/50 rounded-xl p-4 border border-slate-700">
       <h3 className="text-sm font-semibold mb-2 text-slate-400 uppercase tracking-wider">
-        {type === 'acceleration' ? 'Linear Acceleration (m/s²)' : 'Device Orientation (deg)'}
+        {type === 'acceleration' ? 'Linear Acceleration (m/s²)' : 'Device Orientation (rad)'}
       </h3>
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={chartData}>
