@@ -167,22 +167,41 @@ const App: React.FC = () => {
     const now = Date.now();
     const last = bufferRef.current[bufferRef.current.length - 1];
 
+    // Helper to merge nested objects while avoiding null/undefined overwrites
+    const merge = (prev: any, next: any) => {
+      const result = { ...prev };
+      if (!next) return result;
+      for (const key in next) {
+        if (next[key] !== null && next[key] !== undefined) {
+          result[key] = next[key];
+        }
+      }
+      return result;
+    };
+
     let newData: IMUData;
-    if (last && now - last.timestamp < 20) {
+    if (last && now - last.timestamp < 15) {
+      // Update the current entry if it's very recent, keeping data continuity
       newData = {
-        ...last,
-        ...partialData,
-        orientation: { ...last.orientation, ...partialData.orientation },
-        acceleration: { ...last.acceleration, ...partialData.acceleration },
-        rotationRate: { ...last.rotationRate, ...partialData.rotationRate },
+        timestamp: last.timestamp,
+        orientation: merge(last.orientation, partialData.orientation),
+        acceleration: merge(last.acceleration, partialData.acceleration),
+        rotationRate: merge(last.rotationRate, partialData.rotationRate),
       };
       bufferRef.current[bufferRef.current.length - 1] = newData;
     } else {
+      // Create a new entry, but base it on the last known state to prevent 0-resets
+      const baseEntry = last || {
+        orientation: { alpha: 0, beta: 0, gamma: 0 },
+        acceleration: { x: 0, y: 0, z: 0 },
+        rotationRate: { alpha: 0, beta: 0, gamma: 0 }
+      };
+
       newData = {
         timestamp: now,
-        orientation: { alpha: 0, beta: 0, gamma: 0, ...partialData.orientation },
-        acceleration: { x: 0, y: 0, z: 0, ...partialData.acceleration },
-        rotationRate: { alpha: 0, beta: 0, gamma: 0, ...partialData.rotationRate },
+        orientation: merge(baseEntry.orientation, partialData.orientation),
+        acceleration: merge(baseEntry.acceleration, partialData.acceleration),
+        rotationRate: merge(baseEntry.rotationRate, partialData.rotationRate),
       };
       bufferRef.current.push(newData);
     }
