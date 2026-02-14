@@ -86,22 +86,27 @@ void setup() {
     delay(50);
   }
   digitalWrite(LED_BUILTIN, LOW);
+  
+  // Wait a bit for the host to start reading
+  delay(1000);
   usb_web.println("PICO_READY");
+  usb_web.println("WAITING_FOR_DATA");
 }
 
 void loop() {
-  // LED blink to show activity
+  // LED blink to show activity (1Hz)
   static uint32_t led_timer = 0;
   if (millis() - led_timer > 1000) {
     led_timer = millis();
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
   }
 
-  // Periodic Heartbeat to verify RX path
+  // Periodic Heartbeat to verify RX path (every 3s)
   static uint32_t hb_timer = 0;
-  if (millis() - hb_timer > 2000) {
+  if (millis() - hb_timer > 3000) {
     hb_timer = millis();
-    usb_web.println("HEARTBEAT");
+    usb_web.print("HB_TIME:");
+    usb_web.println(millis());
   }
 
   // USB WebUSB -> UART2 & Parse for CAN

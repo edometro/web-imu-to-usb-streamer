@@ -106,46 +106,48 @@ const App: React.FC = () => {
 
   const rxLogRef = useRef<HTMLDivElement>(null);
 
+  // Unified Terminal Logging (Common logic for TX/RX)
+  const addLog = useCallback((type: 'tx' | 'rx', text: string) => {
+    if (rxLogRef.current) {
+      const lines = text.split('\n');
+      lines.forEach(line => {
+        if (!line.trim()) return;
+        const div = document.createElement('div');
+        div.className = `border-l-2 pl-2 mb-1 flex gap-2 ${type === 'tx' ? 'border-emerald-600 text-emerald-400' : 'border-pink-600 text-pink-400'}`;
+        const time = new Date().toLocaleTimeString('ja-JP', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        div.innerHTML = `<span class="opacity-40 text-[10px] w-16">${time}</span><span class="font-bold w-8 uppercase">${type}</span><span class="flex-1">${line}</span>`;
+        rxLogRef.current.prepend(div);
+      });
+      if (rxLogRef.current.children.length > 50) {
+        while (rxLogRef.current.children.length > 50) {
+          rxLogRef.current.lastElementChild?.remove();
+        }
+      }
+    }
+  }, []);
+
   const startReading = async () => {
     isReadingRef.current = true;
     const device = deviceRef.current;
     const decoder = new TextDecoder();
 
-    console.log("WebUSB: Start reading loop...");
+    console.log("WebUSB: Start reading loop... Endpoint IN:", endpointInRef.current);
 
     while (isReadingRef.current && device && device.opened) {
       try {
         const result = await device.transferIn(endpointInRef.current, 64);
 
         if (result.status === 'ok' && result.data) {
-          const text = decoder.decode(result.data).trim();
-          if (text) {
-            console.log("WebUSB RX:", text);
-
-            // 安全なDOM更新
-            if (rxLogRef.current) {
-              const lines = text.split('\n');
-              lines.forEach(line => {
-                if (!line.trim()) return;
-                const div = document.createElement('div');
-                div.className = "border-l-2 border-pink-600 text-pink-400 pl-2 mb-1 flex gap-2";
-                const time = new Date().toLocaleTimeString('ja-JP', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                div.innerHTML = `<span class="opacity-40 text-[10px] w-16">${time}</span><span class="font-bold w-8 uppercase">rx</span><span class="flex-1">${line}</span>`;
-                rxLogRef.current.prepend(div);
-              });
-
-              if (rxLogRef.current.children.length > 50) {
-                while (rxLogRef.current.children.length > 50) {
-                  rxLogRef.current.lastElementChild?.remove();
-                }
-              }
-            }
-          }
+          const text = decoder.decode(result.data);
+          console.log("WebUSB Raw RX:", text);
+          addLog('rx', text);
+        } else if (result.status !== 'ok') {
+          console.warn("WebUSB TransferIn result status:", result.status);
         }
       } catch (error: any) {
-        if (!device.opened) break;
+        if (!isReadingRef.current || !device.opened) break;
         console.warn("WebUSB Read error:", error);
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise(r => setTimeout(r, 500)); // Backoff
       }
     }
     console.log("WebUSB: Reading loop stopped.");
@@ -160,11 +162,9 @@ const App: React.FC = () => {
     try {
       setError(null);
       // Raspberry Pi Pico VID=0x2E8A
-      // Specifying classCode: 0xFF helps narrow down to our custom interface
       const device = await (navigator as any).usb.requestDevice({
         filters: [
-          { vendorId: 0x2E8A, classCode: 0xFF }, // Raspberry Pi (Vendor Specific)
-          { vendorId: 0x2E8A } // Fallback for broader match
+          { vendorId: 0x2E8A }
         ]
       });
       await initializeWebUSB(device);
@@ -203,7 +203,7 @@ const App: React.FC = () => {
         orientation: { alpha: event.alpha, beta: event.beta, gamma: event.gamma }
       });
     }
-  }, [isTestMode, status]);
+  }, [isTestMode]);
 
   const handleMotion = useCallback((event: DeviceMotionEvent) => {
     if (!isTestMode) {
@@ -213,7 +213,7 @@ const App: React.FC = () => {
         rotationRate: { alpha: event.rotationRate?.alpha || 0, beta: event.rotationRate?.beta || 0, gamma: event.rotationRate?.gamma || 0 }
       });
     }
-  }, [isTestMode, status]);
+  }, [isTestMode]);
 
   const updateBuffer = (partialData: Partial<IMUData>) => {
     const now = Date.now();
@@ -240,20 +240,6 @@ const App: React.FC = () => {
     }
 
     if (bufferRef.current.length > 50) bufferRef.current.shift();
-
-    // Unified Terminal Logging
-    const addLog = (type: 'tx' | 'rx', text: string) => {
-      if (rxLogRef.current) {
-        const div = document.createElement('div');
-        div.className = `border-l-2 pl-2 mb-1 flex gap-2 ${type === 'tx' ? 'border-emerald-600 text-emerald-400' : 'border-pink-600 text-pink-400'}`;
-        const time = new Date().toLocaleTimeString('ja-JP', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        div.innerHTML = `<span class="opacity-40 text-[10px] w-16">${time}</span><span class="font-bold w-8 uppercase">${type}</span><span class="flex-1">${text}</span>`;
-        rxLogRef.current.prepend(div);
-        if (rxLogRef.current.children.length > 50) {
-          rxLogRef.current.lastElementChild?.remove();
-        }
-      }
-    };
 
     // Send CSV to USB (WebUSB transferOut)
     if (deviceRef.current && deviceRef.current.opened && status === ConnectionStatus.CONNECTED) {
