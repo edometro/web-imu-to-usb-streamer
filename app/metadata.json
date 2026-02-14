@@ -1,0 +1,9 @@
+{
+  "name": "Web IMU to USB Streamer",
+  "description": "A high-performance dashboard that captures device IMU data (Orientation & Motion) and streams it to a connected USB Serial device using the Web Serial API.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "serial"
+  ]
+}

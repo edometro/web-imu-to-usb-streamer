@@ -1,0 +1,19 @@
+
+# Dependencies
+node_modules/
+dist/
+
+# Env secrets (CRITICAL: DO NOT PUSH YOUR API KEY)
+.env
+.env.local
+.env.*.local
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
