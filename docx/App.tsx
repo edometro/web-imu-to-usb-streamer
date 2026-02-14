@@ -288,7 +288,48 @@ const App: React.FC = () => {
     return () => clearInterval(timer);
   }, [status, isStreaming, transmissionInterval]);
 
-  // ... (connectWebUSB, disconnectWebUSB remains, but remove manualPing)
+  const connectWebUSB = async () => {
+    if (!isWebUSBSupported) {
+      setError("このブラウザはWebUSB APIに対応していません。Chrome/Edgeを使用してください。");
+      return;
+    }
+
+    try {
+      setError(null);
+      // Raspberry Pi Pico VID=0x2E8A
+      const device = await (navigator as any).usb.requestDevice({
+        filters: [
+          { vendorId: 0x2E8A }
+        ]
+      });
+      await initializeWebUSB(device);
+    } catch (err: any) {
+      console.error("WebUSB Request Error:", err);
+      if (err.name === 'NotFoundError') {
+        setError("デバイスが選択されませんでした。USB接続を確認してください。");
+      } else {
+        setError(`接続エラー: ${err.message}`);
+      }
+      setStatus(ConnectionStatus.DISCONNECTED);
+    }
+  };
+
+  const disconnectWebUSB = async () => {
+    isReadingRef.current = false;
+    const device = deviceRef.current;
+
+    if (device && device.opened) {
+      try {
+        await device.close();
+      } catch (e) {
+        console.warn("Close error", e);
+      }
+    }
+
+    deviceRef.current = null;
+    setStatus(ConnectionStatus.DISCONNECTED);
+    setError(null);
+  };
 
   return (
     <div className="min-h-screen flex flex-col p-4 md:p-8 space-y-6 max-w-6xl mx-auto">

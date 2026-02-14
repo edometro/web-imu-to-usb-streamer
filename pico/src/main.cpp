@@ -135,9 +135,9 @@ void loop() {
   if (millis() - hb_timer > 3000) {
     hb_timer = millis();
     if (usb_web.connected()) {
-      usb_web.println("HEARTBEAT");
-      usb_web.flush();
-      Serial.println("HB SENT");
+      // usb_web.println("HEARTBEAT");
+      // usb_web.flush();
+      // Serial.println("HB SENT");
     }
   }
 
@@ -145,9 +145,10 @@ void loop() {
   if (usb_web.available()) {
     char c = usb_web.read();
     
-    // Echo back immediately
-    usb_web.write(c);
-    usb_web.flush(); // IMPORTANT
+    // Echo back removed to prevent buffer overflow/lag during high-speed streaming
+    // usb_web.write(c);
+    // usb_web.flush();
+
     
     Serial.print(c); // Debug to CDC
     Serial2.write(c); // Forward to UART
