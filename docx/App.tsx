@@ -107,7 +107,7 @@ const App: React.FC = () => {
   const updateBuffer = (partialData: Partial<IMUData>) => {
     const now = Date.now();
     const last = bufferRef.current[bufferRef.current.length - 1];
-    
+
     let newData: IMUData;
     if (last && now - last.timestamp < 20) {
       newData = {
@@ -129,7 +129,7 @@ const App: React.FC = () => {
     }
 
     if (bufferRef.current.length > 50) bufferRef.current.shift();
-    
+
     // USBにCSV送信
     if (writerRef.current && status === ConnectionStatus.CONNECTED) {
       const csv = `${newData.orientation.alpha?.toFixed(2)},${newData.orientation.beta?.toFixed(2)},${newData.orientation.gamma?.toFixed(2)},${newData.acceleration.x?.toFixed(2)},${newData.acceleration.y?.toFixed(2)},${newData.acceleration.z?.toFixed(2)}\n`;
@@ -205,14 +205,14 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          <button 
+          <button
             onClick={() => setShowGuide(!showGuide)}
             className="px-3 py-2 text-xs font-bold text-indigo-400 border border-indigo-400/30 rounded-lg hover:bg-indigo-400/10 transition-colors"
           >
             <i className="fas fa-question-circle mr-2"></i>接続ガイド
           </button>
-          
-          <select 
+
+          <select
             className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none"
             value={baudRate}
             onChange={(e) => setBaudRate(parseInt(e.target.value))}
@@ -221,12 +221,11 @@ const App: React.FC = () => {
             <option value={9600}>9600 bps</option>
             <option value={115200}>115200 bps</option>
           </select>
-          
-          <button 
-            onClick={status === ConnectionStatus.CONNECTED ? disconnectSerial : connectSerial} 
-            className={`px-4 py-2 rounded-lg text-sm font-semibold shadow-lg flex items-center gap-2 transition-all ${
-              status === ConnectionStatus.CONNECTED ? 'bg-red-500/20 text-red-400 border border-red-500/50' : 'bg-indigo-600 hover:bg-indigo-500 text-white'
-            }`}
+
+          <button
+            onClick={status === ConnectionStatus.CONNECTED ? disconnectSerial : connectSerial}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold shadow-lg flex items-center gap-2 transition-all ${status === ConnectionStatus.CONNECTED ? 'bg-red-500/20 text-red-400 border border-red-500/50' : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+              }`}
           >
             <i className={`fas ${status === ConnectionStatus.CONNECTED ? 'fa-unlink' : 'fa-plug'}`}></i>
             {status === ConnectionStatus.CONNECTED ? '切断' : 'マイコン1に接続'}
@@ -255,13 +254,13 @@ const App: React.FC = () => {
             <div className="flex flex-col items-center gap-2 p-3 bg-slate-900 rounded-xl border border-slate-800 w-full">
               <i className="fas fa-memory text-2xl text-emerald-400"></i>
               <span>② マイコン1</span>
-              <span className="text-[10px] text-slate-500">TX -> マイコン2 RX</span>
+              <span className="text-[10px] text-slate-500">TX → マイコン2 RX</span>
             </div>
             <i className="fas fa-exchange-alt text-slate-600 hidden md:block"></i>
             <div className="flex flex-col items-center gap-2 p-3 bg-slate-900 rounded-xl border border-slate-800 w-full">
               <i className="fas fa-memory text-2xl text-emerald-400"></i>
               <span>③ マイコン2</span>
-              <span className="text-[10px] text-slate-500">USB -> PC</span>
+              <span className="text-[10px] text-slate-500">USB → PC</span>
             </div>
             <i className="fas fa-arrow-right text-slate-600 hidden md:block"></i>
             <div className="flex flex-col items-center gap-2 p-3 bg-slate-900 rounded-xl border border-slate-800 w-full">
@@ -289,21 +288,19 @@ const App: React.FC = () => {
           <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
             <h2 className="text-lg font-semibold mb-4 text-slate-200">データ制御</h2>
             <div className="space-y-4">
-              <button 
-                onClick={toggleStreaming} 
-                className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
-                  isStreaming ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' : 'bg-slate-700 text-slate-400'
-                }`}
+              <button
+                onClick={toggleStreaming}
+                className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${isStreaming ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' : 'bg-slate-700 text-slate-400'
+                  }`}
               >
                 <i className={`fas ${isStreaming ? 'fa-stop-circle' : 'fa-play-circle'}`}></i>
                 {isStreaming ? 'センサー停止' : 'センサー開始'}
               </button>
 
-              <button 
-                onClick={() => setIsTestMode(!isTestMode)} 
-                className={`w-full py-2 rounded-xl text-xs font-bold border transition-all ${
-                  isTestMode ? 'border-amber-500 text-amber-500 bg-amber-500/10' : 'border-slate-700 text-slate-500'
-                }`}
+              <button
+                onClick={() => setIsTestMode(!isTestMode)}
+                className={`w-full py-2 rounded-xl text-xs font-bold border transition-all ${isTestMode ? 'border-amber-500 text-amber-500 bg-amber-500/10' : 'border-slate-700 text-slate-500'
+                  }`}
               >
                 <i className="fas fa-vial mr-2"></i>
                 {isTestMode ? 'テストモード実行中' : 'テスト送信モード'}
@@ -322,7 +319,7 @@ const App: React.FC = () => {
         {/* Charts and Data */}
         <div className="lg:col-span-2 space-y-6">
           <IMUChart data={imuDataBuffer} type="acceleration" />
-          
+
           <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
               <i className="fas fa-terminal text-emerald-400"></i> 送信状況 (UART Bridge)
@@ -330,13 +327,13 @@ const App: React.FC = () => {
             <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-xs text-emerald-500 h-24 overflow-hidden relative">
               <div className="absolute inset-0 p-4 overflow-y-auto flex flex-col-reverse">
                 {status === ConnectionStatus.CONNECTED && (isStreaming || isTestMode) ? (
-                   <div>
-                      {imuDataBuffer.slice(-3).map((d, i) => (
-                        <div key={i} className="whitespace-nowrap opacity-80 border-l-2 border-emerald-900 pl-2 mb-1">
-                          {`TX(${baudRate}) > ${d.acceleration.x?.toFixed(1)},${d.acceleration.y?.toFixed(1)},${d.acceleration.z?.toFixed(1)}...`}
-                        </div>
-                      ))}
-                   </div>
+                  <div>
+                    {imuDataBuffer.slice(-3).map((d, i) => (
+                      <div key={i} className="whitespace-nowrap opacity-80 border-l-2 border-emerald-900 pl-2 mb-1">
+                        {`TX(${baudRate}) > ${d.acceleration.x?.toFixed(1)},${d.acceleration.y?.toFixed(1)},${d.acceleration.z?.toFixed(1)}...`}
+                      </div>
+                    ))}
+                  </div>
                 ) : (
                   <div className="text-slate-600 italic">
                     {status !== ConnectionStatus.CONNECTED ? "マイコン1を接続してください..." : "センサーまたはテストモードを開始..."}
