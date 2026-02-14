@@ -107,15 +107,25 @@ const App: React.FC = () => {
   const startReading = async () => {
     isReadingRef.current = true;
     const device = deviceRef.current;
+    const decoder = new TextDecoder();
 
     while (isReadingRef.current && device && device.opened) {
       try {
         const result = await device.transferIn(endpointInRef.current, 64);
 
         if (result.status === 'ok' && result.data) {
-          // Data received from Pico (debug/echo)
-          // const text = new TextDecoder().decode(result.data);
-          // console.log("RX:", text);
+          const text = decoder.decode(result.data);
+          // 簡易的にDOMに追加 (再レンダリング負荷軽減のため)
+          const logContainer = document.getElementById('rx-log-container');
+          if (logContainer) {
+            const div = document.createElement('div');
+            div.textContent = `RX < ${text.trim()}`;
+            logContainer.prepend(div);
+            // ログが増えすぎたら削除
+            if (logContainer.children.length > 20) {
+              logContainer.lastElementChild?.remove();
+            }
+          }
         }
       } catch (error: any) {
         if (!device.opened) break;
@@ -405,10 +415,11 @@ const App: React.FC = () => {
             <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-xs text-emerald-500 h-24 overflow-hidden relative">
               <div className="absolute inset-0 p-4 overflow-y-auto flex flex-col-reverse">
                 {status === ConnectionStatus.CONNECTED && (isStreaming || isTestMode) ? (
-                  <div>
-                    {imuDataBuffer.slice(-3).map((d, i) => (
-                      <div key={i} className="whitespace-nowrap opacity-80 border-l-2 border-emerald-900 pl-2 mb-1">
-                        {`TX(WebUSB) > ${d.acceleration.x?.toFixed(1)},${d.acceleration.y?.toFixed(1)},${d.acceleration.z?.toFixed(1)}...`}
+                  <div className="flex flex-col gap-1">
+                    {/* 最新のログを表示 */}
+                    {imuDataBuffer.slice(-5).map((d, i) => (
+                      <div key={`tx-${i}`} className="whitespace-nowrap opacity-80 border-l-2 border-emerald-900 pl-2 text-emerald-500">
+                        {`TX > ${d.acceleration.x?.toFixed(1)},${d.acceleration.y?.toFixed(1)},${d.acceleration.z?.toFixed(1)}...`}
                       </div>
                     ))}
                   </div>
@@ -417,6 +428,18 @@ const App: React.FC = () => {
                     {status !== ConnectionStatus.CONNECTED ? "WebUSB (Pico) を接続してください..." : "センサーまたはテストモードを開始..."}
                   </div>
                 )}
+
+                {/* RX Data Display Area */}
+                <div className="mt-4 border-t border-slate-800 pt-2">
+                  <div className="text-[10px] text-slate-500 mb-1">RX Log (From Pico)</div>
+                  <div id="rx-log-container" className="flex flex-col-reverse text-pink-400 font-mono text-xs h-20 overflow-y-auto">
+                    {/* JSで直接DOM操作するか、Stateで管理するか方針によるが、
+                          ここでは既存のstartReadingでconsole.logしていたのをState管理に変更する必要がある。
+                          しかし、頻繁な更新は重くなるため、一旦簡易的にConsole表示を有効化し、
+                          Stateへの保存は最小限にするアプローチをとる。
+                       */}
+                  </div>
+                </div>
               </div>
             </div>
             <p className="text-[10px] text-slate-500 mt-2">※Raspberry Pi Picoは独自USBクラスとして認識されます。</p>

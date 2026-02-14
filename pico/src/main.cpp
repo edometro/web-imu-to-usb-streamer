@@ -46,6 +46,9 @@ void sendIMUtoCAN(float alpha, float beta, float gamma, float ax, float ay, floa
 
   if (success) {
     usb_web.println("ACK");
+  } else {
+    // エラー詳細を返す
+    usb_web.println("ERR:CAN_SEND");
   }
 }
 
