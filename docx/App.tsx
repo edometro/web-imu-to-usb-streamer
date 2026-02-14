@@ -152,6 +152,15 @@ const App: React.FC = () => {
     isReadingRef.current = false;
   };
 
+  // Use refs to avoid stale closure issues in event listeners
+  const isStreamingRef = useRef(isStreaming);
+  const isTestModeRef = useRef(isTestMode);
+  const statusRef = useRef(status);
+
+  useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
+  useEffect(() => { isTestModeRef.current = isTestMode; }, [isTestMode]);
+  useEffect(() => { statusRef.current = status; }, [status]);
+
   const updateBuffer = (partialData: Partial<IMUData>) => {
     const now = Date.now();
     const last = bufferRef.current[bufferRef.current.length - 1];
@@ -179,28 +188,47 @@ const App: React.FC = () => {
     if (bufferRef.current.length > 50) bufferRef.current.shift();
 
     // Data Streaming (WebUSB) - Only if connected
-    if (deviceRef.current && deviceRef.current.opened && status === ConnectionStatus.CONNECTED) {
+    if (deviceRef.current && deviceRef.current.opened && statusRef.current === ConnectionStatus.CONNECTED) {
       const csv = `${newData.orientation.alpha?.toFixed(2)},${newData.orientation.beta?.toFixed(2)},${newData.orientation.gamma?.toFixed(2)},${newData.acceleration.x?.toFixed(2)},${newData.acceleration.y?.toFixed(2)},${newData.acceleration.z?.toFixed(2)}\n`;
       const encoded = encoderRef.current.encode(csv);
       deviceRef.current.transferOut(endpointOutRef.current, encoded)
         .then(() => {
-          if (Math.random() < 0.1) addLog('tx', csv.trim());
+          addLog('tx', csv.trim());
         })
         .catch(e => console.error("TX Fail", e));
     }
   };
 
   const handleOrientation = useCallback((e: DeviceOrientationEvent) => {
-    if (!isTestMode && isStreaming) updateBuffer({ timestamp: Date.now(), orientation: { alpha: e.alpha, beta: e.beta, gamma: e.gamma } });
-  }, [isTestMode, isStreaming, status]);
+    if (!isTestModeRef.current && isStreamingRef.current) {
+      updateBuffer({ timestamp: Date.now(), orientation: { alpha: e.alpha, beta: e.beta, gamma: e.gamma } });
+    }
+  }, []); // uses refs, no deps
 
   const handleMotion = useCallback((e: DeviceMotionEvent) => {
-    if (!isTestMode && isStreaming) updateBuffer({
-      timestamp: Date.now(),
-      acceleration: { x: e.acceleration?.x || 0, y: e.acceleration?.y || 0, z: e.acceleration?.z || 0 },
-      rotationRate: { alpha: e.rotationRate?.alpha || 0, beta: e.rotationRate?.beta || 0, gamma: e.rotationRate?.gamma || 0 }
-    });
-  }, [isTestMode, isStreaming, status]);
+    if (!isTestModeRef.current && isStreamingRef.current) {
+      updateBuffer({
+        timestamp: Date.now(),
+        acceleration: { x: e.acceleration?.x || 0, y: e.acceleration?.y || 0, z: e.acceleration?.z || 0 },
+        rotationRate: { alpha: e.rotationRate?.alpha || 0, beta: e.rotationRate?.beta || 0, gamma: e.rotationRate?.gamma || 0 }
+      });
+    }
+  }, []);
+
+  // Manage Event Listeners based on isStreaming
+  useEffect(() => {
+    if (isStreaming) {
+      window.addEventListener('deviceorientation', handleOrientation);
+      window.addEventListener('devicemotion', handleMotion);
+    } else {
+      window.removeEventListener('deviceorientation', handleOrientation);
+      window.removeEventListener('devicemotion', handleMotion);
+    }
+    return () => {
+      window.removeEventListener('deviceorientation', handleOrientation);
+      window.removeEventListener('devicemotion', handleMotion);
+    };
+  }, [isStreaming, handleOrientation, handleMotion]);
 
   // Test Mode Loop - Now works regardless of status
   useEffect(() => {
@@ -212,7 +240,7 @@ const App: React.FC = () => {
       }, 50);
     }
     return () => clearInterval(timer);
-  }, [isTestMode, status]);
+  }, [isTestMode]);
 
   // Chart Update
   useEffect(() => {
@@ -226,12 +254,8 @@ const App: React.FC = () => {
         const res = await (DeviceOrientationEvent as any).requestPermission();
         if (res !== 'granted') return;
       }
-      window.addEventListener('deviceorientation', handleOrientation);
-      window.addEventListener('devicemotion', handleMotion);
       setIsStreaming(true);
     } else {
-      window.removeEventListener('deviceorientation', handleOrientation);
-      window.removeEventListener('devicemotion', handleMotion);
       setIsStreaming(false);
     }
   };
