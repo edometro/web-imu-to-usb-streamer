@@ -79,6 +79,16 @@ const App: React.FC = () => {
 
       interfaceNumberRef.current = interfaceIndex;
 
+      // Enable DTR (Data Terminal Ready) to notify Pico of connection
+      await device.controlTransferOut({
+        requestType: 'class',
+        recipient: 'interface',
+        request: 0x22, // SET_CONTROL_LINE_STATE
+        value: 0x01,   // DTR=1
+        index: interfaceIndex
+      });
+      console.log("DTR Enabled");
+
       // Find Endpoints
       const endpoints = vendorInterface.alternates[0].endpoints;
       console.log("Endpoints found:", endpoints);
