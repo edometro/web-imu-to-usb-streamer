@@ -104,35 +104,43 @@ const App: React.FC = () => {
     }
   };
 
+  const rxLogRef = useRef<HTMLDivElement>(null);
+
   const startReading = async () => {
     isReadingRef.current = true;
     const device = deviceRef.current;
     const decoder = new TextDecoder();
+
+    console.log("WebUSB: Start reading loop...");
 
     while (isReadingRef.current && device && device.opened) {
       try {
         const result = await device.transferIn(endpointInRef.current, 64);
 
         if (result.status === 'ok' && result.data) {
-          const text = decoder.decode(result.data);
-          // 簡易的にDOMに追加 (再レンダリング負荷軽減のため)
-          const logContainer = document.getElementById('rx-log-container');
-          if (logContainer) {
-            const div = document.createElement('div');
-            div.textContent = `RX < ${text.trim()}`;
-            logContainer.prepend(div);
-            // ログが増えすぎたら削除
-            if (logContainer.children.length > 20) {
-              logContainer.lastElementChild?.remove();
+          const text = decoder.decode(result.data).trim();
+          if (text) {
+            console.log("WebUSB RX:", text);
+
+            // 安全なDOM更新
+            if (rxLogRef.current) {
+              const div = document.createElement('div');
+              div.className = "border-l-2 border-pink-900 pl-2 mb-1";
+              div.textContent = `RX < ${text}`;
+              rxLogRef.current.prepend(div);
+              if (rxLogRef.current.children.length > 30) {
+                rxLogRef.current.lastElementChild?.remove();
+              }
             }
           }
         }
       } catch (error: any) {
         if (!device.opened) break;
-        console.warn("Read error:", error);
+        console.warn("WebUSB Read error:", error);
         await new Promise(r => setTimeout(r, 100));
       }
     }
+    console.log("WebUSB: Reading loop stopped.");
   };
 
   const connectWebUSB = async () => {
@@ -432,12 +440,11 @@ const App: React.FC = () => {
                 {/* RX Data Display Area */}
                 <div className="mt-4 border-t border-slate-800 pt-2">
                   <div className="text-[10px] text-slate-500 mb-1">RX Log (From Pico)</div>
-                  <div id="rx-log-container" className="flex flex-col-reverse text-pink-400 font-mono text-xs h-20 overflow-y-auto">
-                    {/* JSで直接DOM操作するか、Stateで管理するか方針によるが、
-                          ここでは既存のstartReadingでconsole.logしていたのをState管理に変更する必要がある。
-                          しかし、頻繁な更新は重くなるため、一旦簡易的にConsole表示を有効化し、
-                          Stateへの保存は最小限にするアプローチをとる。
-                       */}
+                  <div
+                    ref={rxLogRef}
+                    className="flex flex-col-reverse text-pink-400 font-mono text-xs h-32 overflow-y-auto"
+                  >
+                    <div className="text-slate-700 italic">Waiting for data...</div>
                   </div>
                 </div>
               </div>
