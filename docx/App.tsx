@@ -124,12 +124,20 @@ const App: React.FC = () => {
 
             // 安全なDOM更新
             if (rxLogRef.current) {
-              const div = document.createElement('div');
-              div.className = "border-l-2 border-pink-900 pl-2 mb-1";
-              div.textContent = `RX < ${text}`;
-              rxLogRef.current.prepend(div);
-              if (rxLogRef.current.children.length > 30) {
-                rxLogRef.current.lastElementChild?.remove();
+              const lines = text.split('\n');
+              lines.forEach(line => {
+                if (!line.trim()) return;
+                const div = document.createElement('div');
+                div.className = "border-l-2 border-pink-600 text-pink-400 pl-2 mb-1 flex gap-2";
+                const time = new Date().toLocaleTimeString('ja-JP', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                div.innerHTML = `<span class="opacity-40 text-[10px] w-16">${time}</span><span class="font-bold w-8 uppercase">rx</span><span class="flex-1">${line}</span>`;
+                rxLogRef.current.prepend(div);
+              });
+
+              if (rxLogRef.current.children.length > 50) {
+                while (rxLogRef.current.children.length > 50) {
+                  rxLogRef.current.lastElementChild?.remove();
+                }
               }
             }
           }
@@ -233,13 +241,33 @@ const App: React.FC = () => {
 
     if (bufferRef.current.length > 50) bufferRef.current.shift();
 
+    // Unified Terminal Logging
+    const addLog = (type: 'tx' | 'rx', text: string) => {
+      if (rxLogRef.current) {
+        const div = document.createElement('div');
+        div.className = `border-l-2 pl-2 mb-1 flex gap-2 ${type === 'tx' ? 'border-emerald-600 text-emerald-400' : 'border-pink-600 text-pink-400'}`;
+        const time = new Date().toLocaleTimeString('ja-JP', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        div.innerHTML = `<span class="opacity-40 text-[10px] w-16">${time}</span><span class="font-bold w-8 uppercase">${type}</span><span class="flex-1">${text}</span>`;
+        rxLogRef.current.prepend(div);
+        if (rxLogRef.current.children.length > 50) {
+          rxLogRef.current.lastElementChild?.remove();
+        }
+      }
+    };
+
     // Send CSV to USB (WebUSB transferOut)
     if (deviceRef.current && deviceRef.current.opened && status === ConnectionStatus.CONNECTED) {
       const csv = `${newData.orientation.alpha?.toFixed(2)},${newData.orientation.beta?.toFixed(2)},${newData.orientation.gamma?.toFixed(2)},${newData.acceleration.x?.toFixed(2)},${newData.acceleration.y?.toFixed(2)},${newData.acceleration.z?.toFixed(2)}\n`;
       const data = encoderRef.current.encode(csv);
 
       deviceRef.current.transferOut(endpointOutRef.current, data)
-        .catch(e => console.error("Write fail", e));
+        .then(() => {
+          addLog('tx', csv.trim());
+        })
+        .catch(e => {
+          console.error("Write fail", e);
+          addLog('tx', `FAILED: ${e.message}`);
+        });
     }
   };
 
@@ -416,43 +444,42 @@ const App: React.FC = () => {
         <div className="lg:col-span-2 space-y-6">
           <IMUChart data={imuDataBuffer} type="acceleration" />
 
-          <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
-            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <i className="fas fa-terminal text-emerald-400"></i> 送信状況 (WebUSB Vendor)
-            </h2>
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-xs text-emerald-500 h-24 overflow-hidden relative">
-              <div className="absolute inset-0 p-4 overflow-y-auto flex flex-col-reverse">
-                {status === ConnectionStatus.CONNECTED && (isStreaming || isTestMode) ? (
-                  <div className="flex flex-col gap-1">
-                    {/* 最新のログを表示 */}
-                    {imuDataBuffer.slice(-5).map((d, i) => (
-                      <div key={`tx-${i}`} className="whitespace-nowrap opacity-80 border-l-2 border-emerald-900 pl-2 text-emerald-500">
-                        {`TX > ${d.acceleration.x?.toFixed(1)},${d.acceleration.y?.toFixed(1)},${d.acceleration.z?.toFixed(1)}...`}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-slate-600 italic">
-                    {status !== ConnectionStatus.CONNECTED ? "WebUSB (Pico) を接続してください..." : "センサーまたはテストモードを開始..."}
-                  </div>
-                )}
-
-                {/* RX Data Display Area */}
-                <div className="mt-4 border-t border-slate-800 pt-2">
-                  <div className="text-[10px] text-slate-500 mb-1">RX Log (From Pico)</div>
-                  <div
-                    ref={rxLogRef}
-                    className="flex flex-col-reverse text-pink-400 font-mono text-xs h-32 overflow-y-auto"
-                  >
-                    <div className="text-slate-700 italic">Waiting for data...</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <p className="text-[10px] text-slate-500 mt-2">※Raspberry Pi Picoは独自USBクラスとして認識されます。</p>
-          </div>
-
           <IMUChart data={imuDataBuffer} type="orientation" />
+        </div>
+      </div>
+
+      {/* Full Width Integrated Terminal */}
+      <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700 shadow-2xl">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <i className="fas fa-terminal text-emerald-400"></i> Unified USB Terminal (WebUSB Vendor Class)
+          </h2>
+          <div className="flex gap-2">
+            <span className="flex items-center gap-1 text-[10px] text-emerald-400">
+              <span className="w-2 h-2 bg-emerald-600 rounded-full"></span> TX
+            </span>
+            <span className="flex items-center gap-1 text-[10px] text-pink-400">
+              <span className="w-2 h-2 bg-pink-600 rounded-full"></span> RX
+            </span>
+          </div>
+        </div>
+
+        <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-xs relative">
+          <div
+            ref={rxLogRef}
+            className="flex flex-col-reverse h-64 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700"
+          >
+            <div className="text-slate-700 italic">Listening for WebUSB events...</div>
+          </div>
+        </div>
+        <div className="flex justify-between mt-2">
+          <p className="text-[10px] text-slate-500">※ Raspberry Pi Pico (VID:0x2E8A) 独自のベンダークラス通信ログです。</p>
+          <button
+            onClick={() => { if (rxLogRef.current) rxLogRef.current.innerHTML = '<div class="text-slate-700 italic">Terminal cleared.</div>' }}
+            className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
+          >
+            Clear Terminal
+          </button>
         </div>
       </div>
     </div>
