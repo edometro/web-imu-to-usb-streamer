@@ -13,6 +13,7 @@ const App: React.FC = () => {
   const [insight] = useState<string>("USB (Vendor Class)に接続してセンサーを有効にすると、AI解析が始まります。");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isTestMode, setIsTestMode] = useState(false); // Default to OFF
+  const [transmissionInterval, setTransmissionInterval] = useState<number>(50); // Default 50ms (20Hz)
   const [error, setError] = useState<string | null>(null);
   const [showGuide, setShowGuide] = useState(false);
 
@@ -28,6 +29,7 @@ const App: React.FC = () => {
   const bufferRef = useRef<IMUData[]>([]);
   const isReadingRef = useRef(false);
   const rxLogRef = useRef<HTMLDivElement>(null);
+  const lastTransmitTimeRef = useRef<number>(0);
 
   // Unified Terminal Logging
   const addLog = useCallback((type: 'tx' | 'rx', text: string) => {
@@ -187,15 +189,18 @@ const App: React.FC = () => {
 
     if (bufferRef.current.length > 50) bufferRef.current.shift();
 
-    // Data Streaming (WebUSB) - Only if connected
+    // Data Streaming (WebUSB) - Only if connected and interval has passed
     if (deviceRef.current && deviceRef.current.opened && statusRef.current === ConnectionStatus.CONNECTED) {
-      const csv = `${newData.orientation.alpha?.toFixed(2)},${newData.orientation.beta?.toFixed(2)},${newData.orientation.gamma?.toFixed(2)},${newData.acceleration.x?.toFixed(2)},${newData.acceleration.y?.toFixed(2)},${newData.acceleration.z?.toFixed(2)}\n`;
-      const encoded = encoderRef.current.encode(csv);
-      deviceRef.current.transferOut(endpointOutRef.current, encoded)
-        .then(() => {
-          addLog('tx', csv.trim());
-        })
-        .catch(e => console.error("TX Fail", e));
+      if (now - lastTransmitTimeRef.current >= transmissionInterval) {
+        lastTransmitTimeRef.current = now;
+        const csv = `${newData.orientation.alpha?.toFixed(2)},${newData.orientation.beta?.toFixed(2)},${newData.orientation.gamma?.toFixed(2)},${newData.acceleration.x?.toFixed(2)},${newData.acceleration.y?.toFixed(2)},${newData.acceleration.z?.toFixed(2)}\n`;
+        const encoded = encoderRef.current.encode(csv);
+        deviceRef.current.transferOut(endpointOutRef.current, encoded)
+          .then(() => {
+            addLog('tx', csv.trim());
+          })
+          .catch(e => console.error("TX Fail", e));
+      }
     }
   };
 
@@ -319,6 +324,22 @@ const App: React.FC = () => {
                 <i className="fas fa-vial mr-2"></i>
                 {isTestMode ? 'Test Mode: ON' : 'Test Mode: OFF'}
               </button>
+
+              <div className="pt-2">
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Transmit Interval</label>
+                  <span className="text-xs font-mono text-indigo-400">{transmissionInterval}ms ({Math.round(1000 / transmissionInterval)}Hz)</span>
+                </div>
+                <input
+                  type="range"
+                  min="10"
+                  max="500"
+                  step="10"
+                  value={transmissionInterval}
+                  onChange={(e) => setTransmissionInterval(Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                />
+              </div>
             </div>
           </div>
 

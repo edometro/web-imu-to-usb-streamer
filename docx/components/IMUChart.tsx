@@ -1,12 +1,12 @@
 
 import React from 'react';
-import { 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
   ResponsiveContainer,
   Legend
 } from 'recharts';
@@ -18,12 +18,20 @@ interface IMUChartProps {
 }
 
 const IMUChart: React.FC<IMUChartProps> = ({ data, type }) => {
-  const chartData = data.map((d, idx) => ({
-    name: idx,
-    x: type === 'acceleration' ? d.acceleration.x : d.orientation.alpha,
-    y: type === 'acceleration' ? d.acceleration.y : d.orientation.beta,
-    z: type === 'acceleration' ? d.acceleration.z : d.orientation.gamma,
-  }));
+  // Create a fixed-size buffer of 50 points for the chart to prevent "stretching" effect
+  const MAX_POINTS = 50;
+  const chartData = Array.from({ length: MAX_POINTS }, (_, i) => {
+    // Fill from the right: the latest data is at the end of the array
+    const dataIndex = data.length - MAX_POINTS + i;
+    const d = dataIndex >= 0 ? data[dataIndex] : null;
+
+    return {
+      name: i,
+      x: d ? (type === 'acceleration' ? d.acceleration.x : d.orientation.alpha) : null,
+      y: d ? (type === 'acceleration' ? d.acceleration.y : d.orientation.beta) : null,
+      z: d ? (type === 'acceleration' ? d.acceleration.z : d.orientation.gamma) : null,
+    };
+  });
 
   const colors = {
     x: '#ef4444', // Red
@@ -31,7 +39,7 @@ const IMUChart: React.FC<IMUChartProps> = ({ data, type }) => {
     z: '#3b82f6', // Blue
   };
 
-  const labels = type === 'acceleration' 
+  const labels = type === 'acceleration'
     ? { x: 'Acc X', y: 'Acc Y', z: 'Acc Z' }
     : { x: 'Alpha', y: 'Beta', z: 'Gamma' };
 
@@ -45,36 +53,36 @@ const IMUChart: React.FC<IMUChartProps> = ({ data, type }) => {
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
           <XAxis dataKey="name" hide />
           <YAxis stroke="#94a3b8" fontSize={10} width={30} />
-          <Tooltip 
+          <Tooltip
             contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', fontSize: '12px' }}
             itemStyle={{ padding: '0px' }}
           />
           <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }} />
-          <Line 
-            type="monotone" 
-            dataKey="x" 
-            name={labels.x} 
-            stroke={colors.x} 
-            strokeWidth={2} 
-            dot={false} 
+          <Line
+            type="monotone"
+            dataKey="x"
+            name={labels.x}
+            stroke={colors.x}
+            strokeWidth={2}
+            dot={false}
             isAnimationActive={false}
           />
-          <Line 
-            type="monotone" 
-            dataKey="y" 
-            name={labels.y} 
-            stroke={colors.y} 
-            strokeWidth={2} 
-            dot={false} 
+          <Line
+            type="monotone"
+            dataKey="y"
+            name={labels.y}
+            stroke={colors.y}
+            strokeWidth={2}
+            dot={false}
             isAnimationActive={false}
           />
-          <Line 
-            type="monotone" 
-            dataKey="z" 
-            name={labels.z} 
-            stroke={colors.z} 
-            strokeWidth={2} 
-            dot={false} 
+          <Line
+            type="monotone"
+            dataKey="z"
+            name={labels.z}
+            stroke={colors.z}
+            strokeWidth={2}
+            dot={false}
             isAnimationActive={false}
           />
         </LineChart>
